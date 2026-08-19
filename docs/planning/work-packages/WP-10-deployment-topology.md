@@ -1,0 +1,98 @@
+# WP-10: Deployment topology
+
+| | |
+| --- | --- |
+| **Status** | todo |
+| **Phase** | 0 |
+| **Depends on** | WP-08 |
+| **Blocks** | Phase 2, Phase 5 |
+
+## Goal
+
+Define how the server side is deployed and operated: the Docker Compose target
+architecture, the network and port map, volumes, and secret handling. This is
+deliverable 11 of the project brief.
+
+## Tasks
+
+### Compose architecture
+- [ ] Define the services: backend, plus Janus if ADR-001 selected it, plus an optional
+      Mosquitto for development only — the production broker belongs to the existing home
+      automation and is external
+- [ ] Define volumes so that data survives a container restart: the SQLite database and
+      the snapshot directory. This is MVP acceptance criterion 13 and must be verified,
+      not assumed.
+- [ ] Health checks per service, and restart policies
+- [ ] Resource limits where they matter
+- [ ] Keep it to what is actually needed. No orchestration, no reverse proxy, no extra
+      services unless something concrete requires them (AGENTS.md section 4).
+
+### Networking
+- [ ] Port map: which service listens on what, and which ports must be reachable from
+      the door device, from the tablet, and from nowhere else
+- [ ] If Janus is used: the UDP port range for media, and what that means for the host
+      firewall and for Docker's networking mode. This is where naive port mapping tends
+      to break WebRTC, so it needs deliberate handling.
+- [ ] ICE and STUN configuration for LAN-only operation, and whether TURN is needed at
+      all locally
+- [ ] Restrict administrative and monitoring interfaces to the internal network
+      (project brief section 27)
+
+### TLS and secure context
+- [ ] Resolve how the client gets a secure context, which WP-06 will have established as
+      a hard requirement for microphone access. Options include a locally trusted
+      certificate or a reverse proxy terminating TLS.
+- [ ] Support plain HTTP for local development without making it the deployed default
+
+### Secrets and configuration
+- [ ] Environment variable and secret file scheme; nothing sensitive in the repository
+- [ ] Provide `.env.example` with every required variable documented and no real values
+- [ ] Map the configuration values from the project brief section 26 onto the components
+      that actually need them
+- [ ] Document how the device token and MQTT credentials are provisioned
+
+### Documentation
+- [ ] Startup instructions, reproducible from a clean checkout
+- [ ] Network and port overview
+- [ ] Troubleshooting notes for the failure modes seen during the spikes
+
+## Deliverables
+
+- `deploy/docker-compose.yml` and supporting files
+- `deploy/.env.example`
+- `docs/architecture/deployment.md`
+
+## Acceptance
+
+- `docker compose up` starts the whole server side from a clean checkout, using only
+  documented commands. This is MVP acceptance criterion 15.
+- Data survives `docker compose down` followed by `up` — verified by test, including
+  both events and snapshot files.
+- No credential, token or key is committed. `.env.example` contains names and
+  descriptions only.
+- The port overview states, for each port, who needs to reach it and from where.
+- If Janus is included, media actually flows through the containerised setup — a compose
+  file that starts cleanly but drops RTP is not acceptance.
+- Administrative interfaces are not exposed beyond the internal network.
+
+## Constraints now fixed
+
+From [`../constraints.md`](../constraints.md):
+
+- Host is **Proxmox on x86**; **ARM must also be supported**. Build multi-architecture
+  images and verify the ARM one actually runs, rather than assuming it.
+- The broker is an **existing Mosquitto**, external to this compose stack. A Mosquitto
+  container is for development only.
+- **Self-signed certificates are the default**, generated on first start so a new user
+  gets a working system without arranging a CA. Using the existing home CA is a
+  documented step two, not the default path.
+
+## Open questions
+
+- If WP-06 finds that a self-signed certificate does not give the tablet a usable secure
+  context for microphone access, the self-contained default and two-way audio conflict.
+  This package cannot resolve that alone, but it has to carry whichever answer WP-06
+  produces.
+- Should the client be served by the backend container or its own? Cheaper as one
+  service, but it couples their release cycles.
+- Does anything need to survive a Proxmox host migration, or is a volume backup enough?

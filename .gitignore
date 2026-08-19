@@ -1,0 +1,46 @@
+# --- ESP-IDF / firmware ---
+build/
+sdkconfig
+sdkconfig.old
+sdkconfig.defaults.*
+managed_components/
+dependencies.lock
+*.bin
+*.elf
+*.map
+
+# --- Node.js / TypeScript (server, client) ---
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# --- Secrets and local configuration ---
+# Never commit credentials (AGENTS.md section 5). Only *.example files are tracked.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# --- Runtime data (Docker volumes, SQLite, snapshots) ---
+data/
+snapshots/
+*.sqlite
+*.sqlite3
+*.db
+
+# --- Editors and OS ---
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

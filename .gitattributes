@@ -1,0 +1,17 @@
+# Normalise line endings so checkouts on Windows, Linux and macOS produce identical
+# diffs. Matches the end_of_line = lf setting in .editorconfig.
+* text=auto eol=lf
+
+# Shell scripts must keep LF even on Windows checkouts.
+*.sh text eol=lf
+
+# Windows-only scripts keep CRLF.
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets: never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.bin binary
+*.elf binary
