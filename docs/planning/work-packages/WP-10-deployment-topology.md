@@ -91,10 +91,10 @@ From [`../constraints.md`](../constraints.md):
 
 ## Additional task from the certificate decision
 
-- [ ] **Give the backend a stable hostname on the LAN.** Certificates for bare IP
-      addresses are awkward and Let's Encrypt will not issue them at all. A local DNS
-      entry or mDNS name is therefore a deployment prerequisite, not a nicety - the PWA
-      cannot have a trusted origin without one.
+- [ ] **Make the hostname a required, configurable setting.** DNS may be assumed to
+      exist; the name may not. No default is sensible, so the backend must fail at
+      startup with a clear message when it is unset, rather than issuing a certificate
+      for a name the tablet will reject.
 - [ ] Document the one-time CA installation on the tablet, including where the CA
       certificate is served from.
 - [ ] Decide certificate lifetime and renewal for the local CA path. A certificate that

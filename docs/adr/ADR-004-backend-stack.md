@@ -186,7 +186,11 @@ producing an origin the browser actually trusts.
 Supplying certificate and key — from the maintainer's existing home CA, or from Let's
 Encrypt where the server is public — is configuration, not a separate code path.
 
-The certificate needs a stable hostname; see WP-10.
+The certificate is issued for a **configurable hostname**. DNS is a project
+prerequisite, so a resolvable name may be assumed; the name itself varies per
+installation and has no sensible default, so it is **required configuration** and the
+backend fails at startup when it is unset. Issuing a certificate for a guessed name would
+push the failure onto the tablet, far from its cause. See WP-10.
 
 ## Serving the client
 

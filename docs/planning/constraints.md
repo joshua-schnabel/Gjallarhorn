@@ -84,10 +84,16 @@ Two supported paths:
 The maintainer's existing home CA can be used instead by supplying certificate and key;
 that is configuration, not a separate code path.
 
-**Consequence for deployment:** the certificate needs a stable hostname. Certificates for
-bare IP addresses are awkward, and Let's Encrypt will not issue for them at all, so the
-LAN needs a resolvable name for the backend — a local DNS entry or mDNS. Tracked in
-WP-10.
+**DNS is a prerequisite.** The maintainer runs DNS on the network, and the project may
+assume a resolvable hostname for the backend rather than working around bare IP
+addresses — certificates for IPs are awkward, and Let's Encrypt will not issue them at
+all.
+
+**The hostname itself is configurable**, per the configuration rule above: other
+installations will use different names. There is no sensible default, so the value is
+**required at startup** and the backend must **fail loudly if it is unset** rather than
+generating a certificate for a name the tablet will reject. A certificate quietly issued
+for the wrong name is a failure that only shows up on the tablet, far from its cause.
 
 **Note for a possible native client:** Android apps have not trusted user-installed CAs by
 default since Android 7. Chrome does, so this affects nothing today, but a native client

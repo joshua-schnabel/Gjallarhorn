@@ -149,8 +149,10 @@ Keeping a real CA rather than pinning a self-signed certificate means the tablet
 also works for debugging, and it avoids hand-rolled certificate handling, which
 AGENTS.md section 8 warns against.
 
-**The stable-hostname consequence stands**: the certificate needs a name, so the LAN needs
-a resolvable one. Tracked in [WP-10](../planning/work-packages/WP-10-deployment-topology.md).
+**The stable-hostname consequence stands.** DNS is a prerequisite of the project, so a
+resolvable name may be assumed — but the name itself is configurable and has no sensible
+default, so it is required configuration that must fail loudly when missing. Tracked in
+[WP-10](../planning/work-packages/WP-10-deployment-topology.md).
 
 ---
 
