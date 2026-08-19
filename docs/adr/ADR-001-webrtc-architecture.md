@@ -65,9 +65,12 @@ option, falling back to G711A.
 `unpublish`. There is no subscriber handle and no `start` request.
 
 **Confirmed from source: two-way audio via Janus does not exist as shipped.** The return
-path (tablet microphone to device speaker) would require writing a VideoRoom subscriber
-implementation. That is the single most consequential finding in this ADR, because
-two-way audio is MVP acceptance criterion 10.
+path (tablet microphone to device speaker) would have to be written.
+
+The runtime test below shows this is worse than a missing feature in Espressif's code:
+VideoRoom requires a *separate handle and a second PeerConnection* for a subscriber, so
+the device would run two ICE agents and two DTLS handshakes per session. Two-way audio is
+MVP acceptance criterion 10, which makes this the finding that decides the ADR.
 
 ### Signaling is genuinely pluggable, and the interface is small
 
@@ -166,9 +169,9 @@ logic staying in our backend.
 - VideoRoom supports H.264 and Opus, so codecs can be made to line up.
 
 **Against, decisively for this MVP:**
-- **The ESP integration is publisher-only.** Return audio would require implementing a
-  VideoRoom subscriber on the device — the largest single piece of new protocol work in
-  any option here, in service of a requirement the direct path already satisfies.
+- **The return audio path needs a second PeerConnection on the device.** See the runtime
+  test below. This is substantially worse than "add subscribe support", and it is the
+  finding that settles the option.
 - **Its strengths are not MVP requirements.** One viewer, no recording, no remote access.
 - **It adds setup steps to the most expensive part of the budget**: create session,
   attach plugin, join room, publish, then the tablet subscribes — all after a cold boot.
@@ -176,11 +179,46 @@ logic staying in our backend.
   Docker networking that commonly breaks WebRTC in exactly this deployment shape.
 - Introducing it now would be infrastructure ahead of requirement (AGENTS.md section 4).
 
-**Not tested at runtime.** Docker Desktop was not running on the development machine, so
-the planned container interop test did not happen. This is a real gap, and it is recorded
-rather than papered over. It does not change the decision: the blocking finding against
-Janus is the publisher-only integration, which is established from source and is not a
-runtime question.
+### Runtime test
+
+Performed 2026-08-19 against `canyan/janus-gateway:latest`
+(`sha256:80970d0b...`), **Janus 1.1.4**, HTTP transport on port 8088 — the same transport
+`janus_demo` uses.
+
+**Codecs are not the problem.** Creating a VideoRoom with `videocodec: h264` and
+`audiocodec: opus` succeeds, and the room reports the configuration back:
+
+```json
+{ "room": 9001, "description": "doorbell",
+  "audiocodec": "opus", "videocodec": "h264", "max_publishers": 1 }
+```
+
+Janus is therefore not rejected on codec grounds. That matters for fairness: the ESP's
+H.264 + Opus would interoperate.
+
+**The return path is the problem, and it is worse than expected.** Joining room 9001 as
+`ptype: publisher` succeeds. Attempting to also join as `ptype: subscriber` on the same
+handle fails:
+
+```json
+{ "videoroom": "event", "error_code": 425,
+  "error": "Already in as a publisher on this handle" }
+```
+
+This is VideoRoom's architecture, not a gap in Espressif's code. Receiving the tablet's
+audio requires the device to **attach a second plugin handle and run a second
+PeerConnection** — a second ICE agent and a second DTLS handshake, on a device that cold
+boots for every session and pays for both in time and energy. The earlier reading, that
+`janus_signal` merely lacked subscribe support, understated the cost.
+
+**Port mapping is as awkward as claimed.** `rtp_port_range` is commented out in the
+shipped `janus.jcfg`, so media uses ephemeral ports across the full range. A containerised
+deployment must either set an explicit range and publish some twenty thousand UDP ports,
+or use host networking — available on the Proxmox Linux host, but behaving differently
+under Docker Desktop, so development and production would diverge.
+
+**Aside:** the commonly referenced image is Janus 1.1.4, built 2023. Choosing Janus later
+would mean sourcing or building a current version rather than taking this image.
 
 ---
 
@@ -221,9 +259,9 @@ That hides most of the setup latency for free.
 - Remote access would need TURN, or Janus. The signaling abstraction means that decision
   is not foreclosed — but nothing is built for it now.
 - More than one simultaneous viewer would need an SFU. Same reasoning.
-- The Janus container interop test is unperformed. If the maintainer wants it done before
-  this ADR is considered settled, Docker Desktop needs to be running and it is roughly an
-  hour's work.
+- Full ESP-to-Janus and browser-to-Janus media interop was not exercised — that needs
+  real hardware. The runtime test covered the signaling and room layer, which is where
+  the blocking finding sits.
 
 ---
 
