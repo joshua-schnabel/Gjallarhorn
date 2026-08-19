@@ -4,8 +4,9 @@ A solar- and battery-powered smart video doorbell built on an ESP32-P4, with a l
 server and an Android tablet client. Designed to run inside the local network.
 
 **Status: Phase 0 — architecture and technical spikes.** No product code has been written
-yet. The power budget and the hardware selection are settled; the WebRTC, MQTT, client
-and backend decisions are next.
+yet. The hardware selection, power budget and all four architecture decisions are
+settled. What remains in Phase 0 is the system architecture, the API design and the
+deployment topology.
 
 ---
 
@@ -24,7 +25,7 @@ and backend decisions are next.
 | --- | --- |
 | `firmware/` | Door device firmware, ESP32-P4 on ESP-IDF |
 | `server/` | Backend, Node.js and TypeScript, deployed with Docker |
-| `client/` | Tablet interface — PWA or native Android, decision pending in ADR-003 |
+| `client/` | Tablet interface — native Android app hosting the web UI in a WebView |
 | `deploy/` | Docker Compose and deployment configuration |
 | `docs/` | Architecture, decisions, API and planning |
 

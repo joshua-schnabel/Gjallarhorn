@@ -61,38 +61,44 @@ solvable that way* — so the work is to test that condition, not to assume it.
 
 From [`../constraints.md`](../constraints.md):
 
-- Target device is a **Google Pixel Tablet on Android 14**, on a stand.
-- **A service worker is required**, so the client is an installable PWA.
-- **A trusted certificate is a base requirement**: an own CA by default, or Let's Encrypt
-  where the server is public. Self-signed is not sufficient - Chrome refuses to register
-  a service worker on an origin with a certificate error.
-- The backend serves the PWA from the same origin as the API.
-- **Several tablets receive the ring notification**, but only one holds the media session.
-
-## Resolved
-
-The suspected conflict between certificates and two-way audio turned out to be a clean
-split, and it is what drove the certificate decision:
-
-- `getUserMedia` and WebRTC **keep working** on an accepted self-signed origin.
-- Service worker registration is **refused outright** on such an origin.
-
-Since a service worker is required, the certificate has to be genuinely trusted. See
-[`../../adr/ADR-003-client-platform.md`](../../adr/ADR-003-client-platform.md).
+- **Google Pixel Tablet, Android 14**, on a stand, permanently powered, **display not
+  permanently on**.
+- **On a ring the app must come to the front like an incoming call.**
+- **No FCM.** A persistent connection from the tablet is acceptable.
+- **A trusted certificate is a base requirement**: local CA by default, Let's Encrypt
+  where the server is public.
+- Several tablets are notified; only one holds the media session.
 
 ## Outcome
 
-Decided in ADR-003: an installable PWA with a service worker, served by the backend over
-HTTPS with a trusted certificate. Native Android is not needed for the stated
-requirements, and the one requirement that would force it is recorded.
+Decided in [`../../adr/ADR-003-client-platform.md`](../../adr/ADR-003-client-platform.md):
+**a native Android app hosting the web UI in a WebView**, with a foreground service for
+the persistent WebSocket and a full-screen intent to raise the app on a ring.
+
+The ADR went through three versions as the requirements sharpened. The deciding finding:
+no web technology can bring itself to the foreground or hold a connection while the screen
+is off, and the only web route to waking a closed app is push through FCM — which is
+excluded.
+
+## Follow-on work this creates
+
+- [ ] Android app skeleton: foreground service, WebSocket client with bounded reconnect,
+      notification channel, full-screen-intent activity
+- [ ] `network_security_config.xml` opting into user-installed CAs — required, since
+      Android apps have ignored them by default since Android 7
+- [ ] `WebChromeClient.onPermissionRequest` granting camera and microphone; without it
+      `getUserMedia` fails in WebView despite manifest permissions
+- [ ] Onboarding for the three one-time setup steps that all fail silently if skipped:
+      install the CA certificate, grant full-screen intent, exempt from battery
+      optimisation
+- [ ] Verify WebRTC behaviour in WebView on the actual device rather than in Chrome
+- [ ] Signing key and install path onto the tablet
 
 ## Open questions
 
-- **What is the service worker for?** Installability and the offline app shell work on an
-  isolated LAN. Notification while the app is *closed* needs Web Push, which Chrome on
-  Android delivers through the OS FCM client - so it needs internet on both the backend
-  and the tablet. Raised with the maintainer.
-- Should a second tablet be able to take over a call, or only observe that it was
-  answered? Interacts with the single-media-peer constraint in ADR-001.
-- What update strategy does the service worker need? A stale cached shell on a wall tablet
-  nobody reloads is a real failure mode.
+- Should the app register as a real calling app via **Telecom / ConnectionService**? That
+  makes the full-screen-intent permission automatic and integrates with the system call
+  UI, at the cost of a much larger API surface. Worth evaluating in Phase 3.
+- What happens when a ring is not answered — missed-call notification, and how does its
+  timeout relate to the device's wake window?
+- Should a second tablet be able to take over a call, or only see that it was answered?

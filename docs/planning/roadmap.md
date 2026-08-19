@@ -99,7 +99,7 @@ exactly one work package:
 | 4 | Sequence diagram: live call | WP-08 |
 | 5 | Comparison: direct WebRTC vs Espressif doorbell vs Janus | WP-04 |
 | 6 | Comparison: MQTT via backend vs direct vs hybrid | WP-05 |
-| 7 | Client recommendation: PWA vs native Android | WP-06 |
+| 7 | Client recommendation: web vs native Android | WP-06 |
 | 8 | Firmware state machine | WP-08 |
 | 9 | Proposed REST API | WP-09 |
 | 10 | Proposed MQTT schema | WP-05 |
@@ -131,9 +131,22 @@ and snapshot intake, telemetry, persistence, MQTT publishing per ADR-002, health
 tests. End-to-end target: `ESP button -> backend -> MQTT` and
 `ESP motion -> snapshot -> backend -> storage`.
 
-**Phase 3 — client.** The platform from ADR-003. Device status, ring notification,
-motion and snapshot history, error display, reconnect. Deliberately ahead of WebRTC:
-everything except live media can be built and tested against the backend alone.
+**Phase 3 — client.** Per ADR-003 this is now **two pieces**: a native Android shell and
+the web UI it hosts.
+
+The shell is small but not optional — a foreground service holding the WebSocket, a
+notification channel, and a full-screen-intent activity that turns the screen on and
+raises the app when the doorbell rings. It also needs `network_security_config.xml` to
+trust the user-installed CA, and `onPermissionRequest` plumbing so WebRTC works in the
+WebView.
+
+The UI is web: device status, ring view, motion and snapshot history, error display,
+reconnect. Deliberately ahead of WebRTC, since everything except live media can be built
+against the backend alone.
+
+Budget for three one-time setup steps that all fail *silently* if skipped: installing the
+CA certificate, granting the full-screen-intent permission, and exempting the app from
+battery optimisation. Onboarding has to detect and explain each.
 
 **Phase 4 — WebRTC.** Implement the ADR-001 architecture. Target: camera and microphone
 from device to tablet, tablet microphone to device speaker. Measure connection setup

@@ -190,13 +190,16 @@ The certificate needs a stable hostname; see WP-10.
 
 ## Serving the client
 
-**The backend serves the PWA from the same origin as the API.** One container, one
+**The backend serves the web UI from the same origin as the API.** One container, one
 certificate, one port.
 
-Same origin is not just convenient, it removes work: no CORS configuration, and a service
-worker scope that covers the app shell and the API calls together. Static assets are
-served with cache headers that let the service worker manage revalidation, and the API is
-mounted under `/api/v1` so the two never collide.
+Per ADR-003 the UI is loaded into a WebView inside a native Android app rather than into a
+browser, but it is served the same way and this decision is unaffected. WebView refuses
+`getUserMedia` from `file://`, so the UI is served over HTTPS rather than bundled into the
+app — which also keeps UI changes to a page reload instead of an app rebuild.
+
+Same origin removes work: no CORS configuration, and static assets and API under one
+certificate. The API is mounted under `/api/v1` so the two never collide.
 
 The alternative — a separate container for the client — would need its own certificate and
 either a second origin with CORS or a reverse proxy to unify them. Neither buys anything

@@ -44,8 +44,18 @@ section 26.
 
 ## Client
 
-- Device: **Google Pixel Tablet, Android 14**, on a stand.
+- Device: **Google Pixel Tablet, Android 14**, on a stand, permanently on mains power.
+- **The display is not permanently on.**
+- **On a ring the app must come to the front, the way an incoming call does** — screen on,
+  app raised, without the user touching anything.
+- **No FCM / Google push.** A persistent connection from the tablet is acceptable, since
+  it is permanently powered.
 - A certificate can be installed on the tablet.
+
+This combination is what forces a native Android client; see
+[`../adr/ADR-003-client-platform.md`](../adr/ADR-003-client-platform.md). No web
+technology can raise itself to the foreground or hold a connection while the screen is
+off, and the only web route to waking a closed app is push through FCM.
 
 ## Server
 

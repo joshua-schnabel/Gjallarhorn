@@ -4,164 +4,193 @@
 | --- | --- |
 | **Status** | Accepted |
 | **Date** | 2026-08-19 |
-| **Revised** | 2026-08-19 — service worker required, trusted certificate now a prerequisite |
+| **Revised** | 2026-08-19 — twice; see revision history at the end |
 | **Work package** | [WP-06](../planning/work-packages/WP-06-client-platform.md) |
 
 ## Decision
 
-**An installable PWA with a service worker, served by the backend over HTTPS with a
-genuinely trusted certificate.**
+**A native Android application that hosts the web UI in a WebView.**
 
-Not a native Android app.
+- A **foreground service** holds a persistent WebSocket to the backend.
+- On a ring, a **full-screen intent** turns the screen on and brings the app to the
+  front, the way an incoming call does.
+- The **UI is the web application**, served by the backend and loaded into the WebView, so
+  it stays TypeScript and shares types with the backend.
 
-### What changed in the revision
+No FCM, no Google dependency, no internet requirement.
 
-The first version of this ADR chose a plain web application without a service worker,
-because self-signed certificates were the deployment default and Chrome blocks service
-worker registration on origins with certificate errors.
+---
 
-The maintainer has since required a service worker and accepted a **trusted certificate as
-a base requirement** — an own CA, or Let's Encrypt where the server is public. That
-removes the constraint the original decision was shaped around, so the decision changes
-with it. See [`../planning/constraints.md`](../planning/constraints.md).
+## Why this changed
+
+The requirement that decides it, from the maintainer:
+
+> The tablet is not permanently on. On a ring, the app should come to the front, the way
+> it would for an incoming call.
+
+The previous version of this ADR recorded exactly this as the trigger that would force a
+native client. The trigger has fired.
+
+**A web page cannot do this, and no amount of configuration changes that:**
+
+- **There is no API for a page to bring itself to the foreground.** The web platform
+  deliberately has none.
+- **A backgrounded page is frozen.** Chrome on Android freezes backgrounded tabs, and
+  Android's Doze mode suspends network for non-exempt apps. A WebSocket does not survive
+  the screen going off — mains power does not change this, because the restriction is
+  about process state, not battery.
+- **Waking a service worker without push is not possible.** The only way to wake one from
+  a closed state is a push message, and on Chrome for Android that means FCM — which the
+  maintainer has ruled out, and which would contradict the LAN-first design anyway.
+
+So the choice is not "web or native" on grounds of taste. Only a native process can hold a
+connection while the screen is off and raise itself when something arrives.
+
+### The service worker requirement dissolves
+
+The maintainer asked for a service worker as the means to this end. With a native shell
+the end is met directly and better: installability, a home-screen icon and a standalone
+window all come from the app being an app.
+
+A service worker in the WebView is therefore **optional**, not required. It may still be
+worth adding later for app-shell caching so the UI renders during a backend restart, but
+nothing on the critical path depends on it.
+
+---
+
+## How the ring reaches a dark tablet
+
+```text
+device --HTTP--> backend --WebSocket--> foreground service (always connected)
+                                              |
+                                     full-screen intent
+                                              |
+                              screen on + activity to front
+                                              |
+                                    WebView shows ring view
+                                              |
+                              WebRTC direct to the door device
+```
+
+**Foreground service.** Android permits a persistent connection in a foreground service
+with an ongoing notification. The tablet is permanently on mains power, so exempting the
+app from battery optimisation is reasonable and has no cost here.
+
+**Full-screen intent.** This is Android's incoming-call mechanism. The activity is
+declared with `setShowWhenLocked(true)` and `setTurnScreenOn(true)`, so it appears over
+the lock screen with the display switched on.
+
+**Android 14 caveat, and it is a real one.** Since Android 14, `USE_FULL_SCREEN_INTENT` is
+a special app access: only calling and alarm apps receive it by default, and the Play
+Store revokes it for others on install. The app must check
+`NotificationManager.canUseFullScreenIntent()` and, if not granted, send the user to
+settings via `ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT`.
+
+For a privately installed doorbell this is a one-time toggle during setup, not a blocker —
+but the app must **detect the missing permission and guide the user**, because a doorbell
+that silently fails to appear is worse than one that says why. Onboarding must cover this
+alongside battery-optimisation exemption.
+
+---
+
+## Why a WebView shell rather than a fully native UI
+
+The native part is small and stable: a service, a connection, a notification, an activity,
+and WebView configuration. The part that will change constantly during Phase 3 — the
+status view, the ring view, the history — stays web.
+
+**This keeps most of the benefits of the web decision** while adding the one capability
+that required native:
+
+- One language across backend and client; API and event types shared, not restated.
+- UI changes are a page reload, not a rebuild-sign-install cycle.
+- The same UI is reachable from a desktop browser for development and debugging.
+- The native surface is small enough to be written once and rarely touched.
+
+### What this costs, and what it requires
+
+- **WebRTC in a WebView needs explicit permission plumbing.** `getUserMedia` fails with a
+  permission error unless the app overrides `WebChromeClient.onPermissionRequest` and
+  grants camera and microphone, in addition to the manifest permissions. This is a known,
+  documented step — but it is a step, and it must be in the Phase 3 plan rather than
+  discovered.
+- **The UI must be served over HTTPS.** WebView refuses `getUserMedia` from `file://`, so
+  the app loads the UI from the backend rather than bundling it.
+- WebView is Chromium-based but is not identical to Chrome. WebRTC behaviour must be
+  verified on the actual device rather than inferred from browser testing.
+
+### Alternative considered: Trusted Web Activity
+
+Rejected. A TWA requires Digital Asset Links verification, which needs a publicly
+resolvable domain — awkward-to-impossible for a LAN-only deployment, and it buys nothing
+that a WebView does not already provide here.
+
+### Alternative considered: fully native UI with native WebRTC
+
+Rejected for the MVP. It would mean building every view twice over the project's life and
+integrating a native WebRTC stack, for no functional gain over a WebView that already has
+one. Remains available if the WebView proves limiting.
 
 ---
 
 ## Certificates
 
-A service worker needs a properly trusted origin. Accepting a self-signed certificate
-through the browser interstitial is **not** enough: `getUserMedia` and WebRTC keep working
-on such an origin, but service worker registration is refused outright.
+The trusted-certificate requirement from the previous revision **stands**, but the
+mechanism changes slightly because the app now controls its own trust store.
 
-| Path | Notes |
-| --- | --- |
-| **Own CA — the default** | The deployment generates a local CA plus a server certificate and publishes the CA certificate for download. Installed once on the tablet. **Chrome on Android trusts user-installed CAs**, so this gives a fully trusted origin with no external dependency. |
-| **Let's Encrypt** | Where the server is publicly reachable, or a DNS-01 challenge with a real domain is available. |
-| **Existing home CA** | Supply certificate and key. Configuration, not a code path. |
+- The deployment generates a **local CA and server certificate**; the CA certificate is
+  installed once on the tablet.
+- The app declares a `network_security_config.xml` that **trusts user-installed CAs**.
+  Android apps have ignored user CAs by default since Android 7, so this opt-in is
+  required — it is one manifest reference and one XML file.
+- Let's Encrypt remains the option where the server is publicly reachable.
 
-This keeps the system self-contained — the goal behind the original self-signed default —
-while actually satisfying the browser. The cost is a one-time certificate installation on
-the tablet, which the maintainer has confirmed is possible.
+Keeping a real CA rather than pinning a self-signed certificate means the tablet's browser
+also works for debugging, and it avoids hand-rolled certificate handling, which
+AGENTS.md section 8 warns against.
 
-**Deployment consequence:** certificates need a stable hostname. Bare-IP certificates are
-awkward and Let's Encrypt will not issue them at all, so the LAN needs a resolvable name
-for the backend. Tracked in [WP-10](../planning/work-packages/WP-10-deployment-topology.md).
-
----
-
-## What the service worker actually buys
-
-This matters, because the answer splits cleanly in two, and the second half is a
-limitation worth knowing before it is designed around.
-
-### Works fully offline, on a LAN with no internet
-
-- **Installability.** A home-screen icon and a standalone window with no browser chrome —
-  a materially better kiosk experience on a wall tablet than a browser tab.
-- **Offline app shell.** The UI loads even while the backend is restarting, instead of
-  showing a browser error page.
-- **Faster starts** and resilience to brief network interruptions.
-- Control over caching and update behaviour.
-
-### Requires internet, and therefore does not work on a LAN-only deployment
-
-- **Push notifications while the app is closed.**
-
-**Chrome on Android delivers Web Push through the operating system's FCM client.** The
-chain is: the page subscribes and receives an endpoint on Google's push service; the
-backend sends the encrypted payload to that endpoint; FCM delivers it to the device over
-its own persistent connection; Chrome then wakes the service worker.
-
-That requires outbound internet from the backend **and** a live FCM connection on the
-tablet. On an isolated LAN, none of it works. A service worker on its own does not create
-a local push channel — there is no such thing in the web platform.
-
-This is a strong inference from the documented architecture rather than something tested
-here, but the dependency is structural, not incidental.
-
----
-
-## Ring notification, and the dark screen
-
-With the app **open**, nothing has changed and nothing is difficult: the backend pushes
-the ring over a live connection (SSE), the page reacts immediately, holds a screen wake
-lock, and plays an alert sound. This satisfies the project brief's section 24, which asks
-only for immediate visibility while the application is open.
-
-With the app **closed or the screen dark**, the options are:
-
-| Approach | Works without internet | Can wake a dark screen |
-| --- | :---: | :---: |
-| Page open in kiosk, wake lock, audible alert | yes | screen is already on |
-| Web Push via service worker | **no** | yes, via the notification |
-| Native app, full-screen intent | yes | yes |
-
-So the earlier finding stands in a sharper form. **The service worker does not remove the
-dark-screen limitation on a LAN-only system** — it removes it only if the deployment has
-internet access and uses Web Push. If the requirement is "the tablet sits dark and the
-doorbell wakes it, with no internet dependency", that is still the native trigger.
-
-The assumed deployment remains a docked, mains-powered tablet with the display on and the
-app in the foreground, for which the open-app path is sufficient.
-
----
-
-## Options considered
-
-### Installable PWA served by the backend — **chosen**
-
-**For:**
-- Meets every MVP requirement including two-way audio.
-- Standalone window and home-screen launch suit a dedicated wall tablet.
-- Offline app shell survives backend restarts.
-- Distribution is a URL; no store, no signing, no install artefact to maintain.
-- One language across backend and client, so API and event types are shared rather than
-  restated.
-- Keeps a future Web Push option open at zero cost if the deployment ever has internet.
-
-**Against:**
-- Requires a trusted certificate — now accepted as a prerequisite.
-- No closed-app notification without internet.
-- Cannot wake a dark screen without push.
-
-### Native Android application
-
-**For:** full-screen intents, background operation, local alerting with no internet, and
-complete control of kiosk behaviour.
-
-**Against:** a second toolchain, signing, installation and update path, for capabilities
-the stated requirements do not ask for. It would use the same backend API and the same
-WebRTC, so building it now teaches nothing earlier. Remains the correct answer if
-dark-screen wake without internet becomes a requirement.
+**The stable-hostname consequence stands**: the certificate needs a name, so the LAN needs
+a resolvable one. Tracked in [WP-10](../planning/work-packages/WP-10-deployment-topology.md).
 
 ---
 
 ## Consequences
 
-- The client is an installable PWA in TypeScript, served by the backend on the **same
-  origin** as the API. Same origin means no CORS, one certificate, one port, and a service
-  worker scope that covers app shell and API together.
-- The backend generates a CA and server certificate on first start, and serves the CA
-  certificate for download so the tablet can be provisioned.
-- **The service worker caches the app shell only.** Event and snapshot data stay live —
-  a doorbell showing cached history would be actively misleading.
-- **Nothing on the critical path depends on push.** Ring notification while the app is
-  open uses SSE, and that path must remain the primary one even if Web Push is added
-  later.
-- The page holds a screen wake lock while in the foreground.
-- Audio autoplay is unlocked by the initial interaction at kiosk startup.
-- Several tablets are notified; only one takes the media session. The others must show
-  that the call was answered elsewhere rather than failing silently.
+- **A fourth deliverable exists that did not before**: an Android application. It is small,
+  but it needs a toolchain, a signing key and an install path onto the tablet. Phase 3
+  grows accordingly.
+- The backend serves the web UI over HTTPS as decided in ADR-004; the WebView loads it.
+- The backend gains a **WebSocket endpoint** for device events, replacing the SSE plan.
+  Bidirectional is now warranted: the app acknowledges rings and reports which tablet took
+  the call. Feeds [WP-09](../planning/work-packages/WP-09-api-design.md).
+- The connection must **reconnect with bounded backoff** and survive network changes; a
+  doorbell whose app quietly lost its connection is broken in the worst way, so the
+  service must surface its own connection state to the UI.
+- Onboarding must cover: install the CA certificate, grant full-screen intent, exempt from
+  battery optimisation. All three are one-time, all three are silent failures if skipped.
+- **Several tablets are notified; only one takes the media session.** The others must
+  dismiss their ring UI when the call is answered elsewhere.
+- The service worker is optional. If added, the app must work without it.
 
 ---
 
 ## Open questions
 
-- **What is the service worker actually for?** If it is installability and the offline
-  shell, everything above works on an isolated LAN. If the goal is notification while the
-  app is closed, that needs internet and FCM — and that is a deployment decision, not a
-  code one. Raised with the maintainer.
-- Should a second tablet be able to take over a call, or only observe that it was
-  answered? Interacts with the single-media-peer constraint in ADR-001.
-- Does the service worker need an update strategy beyond the default? A stale cached shell
-  on a wall tablet nobody reloads is a real failure mode.
+- Should the app use Android's **Telecom / ConnectionService** APIs to register as a real
+  calling app? That would make full-screen intent permission automatic and give proper
+  call UI integration, at the cost of a much larger API surface. Worth a look in Phase 3;
+  the plain full-screen intent route is the simpler starting point.
+- What happens when the ring is not answered? A missed-call notification, presumably, but
+  the timeout and its relationship to the device's wake window need defining.
+- Does the app need to work at all when the backend is unreachable, beyond showing that it
+  is disconnected?
+
+---
+
+## Revision history
+
+| Version | Decision | Why it changed |
+| --- | --- | --- |
+| 1 | Plain web app, no service worker | Self-signed certificates were the default, and Chrome blocks service workers on untrusted origins |
+| 2 | Installable PWA with service worker | Maintainer required a service worker and accepted a trusted certificate as a prerequisite |
+| 3 | **Native Android shell hosting the web UI** | Maintainer requires the app to come to the front on a ring, with the screen off and without FCM. No web technology can do this. |
