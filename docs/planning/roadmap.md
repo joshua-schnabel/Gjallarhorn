@@ -39,8 +39,8 @@ Status values: `todo`, `in progress`, `blocked`, `done`.
 | [WP-05](work-packages/WP-05-spike-mqtt.md) | MQTT architecture and topic schema | done | WP-01 | `ADR-002`, `docs/mqtt.md` |
 | [WP-06](work-packages/WP-06-client-platform.md) | Client platform decision | done | WP-01 | `docs/adr/ADR-003-client-platform.md` |
 | [WP-07](work-packages/WP-07-backend-stack.md) | Backend stack decision | done | WP-01 | `docs/adr/ADR-004-backend-stack.md` |
-| [WP-08](work-packages/WP-08-system-architecture.md) | System architecture and diagrams | **next** | WP-04, WP-05, WP-06, WP-07 | `docs/architecture/` |
-| [WP-09](work-packages/WP-09-api-design.md) | REST API design | todo | WP-08 | `docs/api/openapi.yaml` |
+| [WP-08](work-packages/WP-08-system-architecture.md) | System architecture and diagrams | done | WP-04, WP-05, WP-06, WP-07 | `docs/architecture/` |
+| [WP-09](work-packages/WP-09-api-design.md) | REST API design | **next** | WP-08 | `docs/api/openapi.yaml` |
 | [WP-10](work-packages/WP-10-deployment-topology.md) | Deployment topology | todo | WP-08 | `deploy/`, `docs/architecture/deployment.md` |
 
 ### Dependencies
@@ -71,7 +71,7 @@ depending on whether the device idles cheaply or is switched off entirely betwee
 
 It is now answered. The board's 31.5 mA deep-sleep draw costs ~1220 mAh/day, needing a
 ~12 W panel and a ~21 Ah cell — not a doorbell. With an external latching load switch the
-board is fully unpowered between events: ~57 mAh/day, a 2 W panel and a 3000-5000 mAh
+board is fully unpowered between events: ~58 mAh/day, a 2 W panel and a 3000-5000 mAh
 cell. **A factor of about 21**, so the load switch is a requirement of the design rather
 than an optimisation.
 

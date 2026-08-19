@@ -58,7 +58,7 @@ a later optimisation — and here it decided the architecture.
 The board draws 31.5 mA in deep sleep, roughly 1220 mAh per day before a single event is
 handled. That would need a ~12 W panel and a ~21 Ah cell, which is a garden installation
 rather than a doorbell. With an external latching load switch the board is **fully
-unpowered between events**: ~57 mAh/day, a 2 W panel and a 3000-5000 mAh cell.
+unpowered between events**: ~58 mAh/day, a 2 W panel and a 3000-5000 mAh cell.
 
 So the device does not sleep — it switches off. It cold-boots on every wake, triggered
 only by the button or the motion sensor, and is unreachable in between. There is no

@@ -38,7 +38,7 @@ These are engineering estimates. They are the first things to replace with measu
 | Snapshot upload | 2 s @ 100 mA | ~200 KB over LAN Wi-Fi |
 | Shutdown | 1 s @ 80 mA | |
 | Live session | 90 s @ 250 mA | Wi-Fi plus camera plus H.264 hardware encode plus two-way audio |
-| PIR quiescent | 12 µA @ 5 V | AM312 class sensor |
+| PIR quiescent | 50 µA @ 5 V | HC-SR501 class sensor with adjustable hold time |
 | Latch circuit quiescent | 5 µA @ 5 V | |
 | Charge path efficiency | 75 % | MPPT plus charger losses |
 | Winter yield | 0.5 peak sun hours/day | Central Europe December, wall-mounted, possibly shaded |
@@ -81,14 +81,16 @@ draw current.
 
 ```
 power module quiescent:  1.00 mA from battery  ->  24.0 mAh/day
-PIR (12 µA @ 5 V):       0.019 mA              ->   0.45 mAh/day
+PIR (50 µA @ 5 V):       0.079 mA              ->   1.89 mAh/day
 latch (5 µA @ 5 V):      0.008 mA              ->   0.19 mAh/day
 ------------------------------------------------------------
-idle subtotal:                                     24.6 mAh/day
+idle subtotal:                                     26.1 mAh/day
 ```
 
 Note what dominates: with the board gated off, the **power module's own quiescent current
-is 97 % of the idle draw**. The PIR is noise by comparison.
+is 92 % of the idle draw**. The PIR is the next largest term and still small — which is why
+trading 38 µA for a hardware-enforced motion cooldown is worth it; see
+[`hardware.md`](hardware.md) section 4.
 
 ---
 
@@ -122,11 +124,11 @@ From battery: 6.46 x 1.571 = **10.15 mAh per ring** **[A]**
 ### Daily total, Scenario B
 
 ```
-idle:                   24.6 mAh/day
+idle:                   26.1 mAh/day
 20 motion events:       11.6 mAh/day
 2 doorbell rings:       20.3 mAh/day
 --------------------------------------
-total:                  56.5 mAh/day  =  0.21 Wh/day
+total:                  58.0 mAh/day  =  0.21 Wh/day
 ```
 
 ---
@@ -135,7 +137,7 @@ total:                  56.5 mAh/day  =  0.21 Wh/day
 
 | | Scenario A (deep sleep) | Scenario B (power gating) |
 | --- | --- | --- |
-| Daily consumption | ~1220 mAh/day | ~57 mAh/day |
+| Daily consumption | ~1220 mAh/day | ~58 mAh/day |
 | Required panel | ~12 W | ~2 W |
 | Battery for 10 days autonomy | ~21 Ah | ~3 Ah |
 | Buildable as a doorbell | no | yes |
@@ -155,15 +157,15 @@ between events, which the maintainer has accepted.
 ### Battery
 
 ```
-daily consumption:            56.5 mAh/day
-10 days autonomy:            565 mAh usable
-usable depth of discharge:   / 0.80  ->  706 mAh
-cold derating at 0 degrees:  / 0.70  ->  1009 mAh minimum
+daily consumption:            58.0 mAh/day
+10 days autonomy:            580 mAh usable
+usable depth of discharge:   / 0.80  ->  725 mAh
+cold derating at 0 degrees:  / 0.70  ->  1036 mAh minimum
 ```
 
 **Recommendation: 3000 mAh minimum, 5000 mAh preferred.** **[A]**
 
-The margin over the calculated 1009 mAh is deliberate. The event estimates carry a
+The margin over the calculated 1036 mAh is deliberate. The event estimates carry a
 plausible factor of two to three of uncertainty, and the cost difference between a
 3000 mAh and a 5000 mAh cell is small compared to the cost of finding out in January that
 it is too small.
@@ -190,12 +192,12 @@ Which assumptions actually matter, and what happens if they are wrong:
 
 | If this changes | Daily total becomes | Comment |
 | --- | --- | --- |
-| Baseline | 57 mAh/day | |
-| Module quiescent is 0.5 mA, not 1 mA | 45 mAh/day | idle is the largest single term |
-| Module quiescent is 2 mA | 81 mAh/day | worth measuring first, if anything is measured |
-| Live session draws 400 mA | 69 mAh/day | |
-| Wake takes 15 s, not 5 s | 64 mAh/day | |
-| 100 motion events/day (busy street) | 103 mAh/day | |
+| Baseline | 58 mAh/day | |
+| Module quiescent is 0.5 mA, not 1 mA | 46 mAh/day | idle is the largest single term |
+| Module quiescent is 2 mA | 82 mAh/day | worth measuring first, if anything is measured |
+| Live session draws 400 mA | 70 mAh/day | |
+| Wake takes 15 s, not 5 s | 66 mAh/day | |
+| 100 motion events/day (busy street) | 104 mAh/day | |
 | All of the pessimistic cases together | ~150 mAh/day | |
 
 Even the fully pessimistic combination is served by a 5000 mAh cell and a 2 W panel with
