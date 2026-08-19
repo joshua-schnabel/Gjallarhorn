@@ -36,10 +36,10 @@ Status values: `todo`, `in progress`, `blocked`, `done`.
 | [WP-02](work-packages/WP-02-hardware-baseline.md) | Hardware baseline and component selection | in progress | WP-01 | `docs/hardware.md` |
 | [WP-03](work-packages/WP-03-power-baseline.md) | Power baseline and budget | done | WP-02 | `docs/power-budget.md` |
 | [WP-04](work-packages/WP-04-spike-webrtc.md) | WebRTC architecture spike | done | WP-03 | `docs/adr/ADR-001-webrtc-architecture.md` |
-| [WP-05](work-packages/WP-05-spike-mqtt.md) | MQTT architecture and topic schema | **next** | WP-01 | `ADR-002`, `docs/mqtt.md` |
-| [WP-06](work-packages/WP-06-client-platform.md) | Client platform decision | **next** | WP-01 | `docs/adr/ADR-003-client-platform.md` |
-| [WP-07](work-packages/WP-07-backend-stack.md) | Backend stack decision | **next** | WP-01 | `docs/adr/ADR-004-backend-stack.md` |
-| [WP-08](work-packages/WP-08-system-architecture.md) | System architecture and diagrams | todo | WP-04, WP-05, WP-06, WP-07 | `docs/architecture/` |
+| [WP-05](work-packages/WP-05-spike-mqtt.md) | MQTT architecture and topic schema | done | WP-01 | `ADR-002`, `docs/mqtt.md` |
+| [WP-06](work-packages/WP-06-client-platform.md) | Client platform decision | done | WP-01 | `docs/adr/ADR-003-client-platform.md` |
+| [WP-07](work-packages/WP-07-backend-stack.md) | Backend stack decision | done | WP-01 | `docs/adr/ADR-004-backend-stack.md` |
+| [WP-08](work-packages/WP-08-system-architecture.md) | System architecture and diagrams | **next** | WP-04, WP-05, WP-06, WP-07 | `docs/architecture/` |
 | [WP-09](work-packages/WP-09-api-design.md) | REST API design | todo | WP-08 | `docs/api/openapi.yaml` |
 | [WP-10](work-packages/WP-10-deployment-topology.md) | Deployment topology | todo | WP-08 | `deploy/`, `docs/architecture/deployment.md` |
 
