@@ -56,15 +56,32 @@ section 26.
 
 ## TLS
 
-- A CA exists in the home network, but **the default must be a self-contained system**:
-  self-signed certificates, so a new user can start quickly.
-- Using the existing CA is step two, not the default.
+**Revised 2026-08-19**, superseding the earlier self-signed default. The maintainer
+requires a service worker, and a service worker requires a genuinely trusted certificate —
+Chrome refuses to register one on an origin with a certificate error. Self-signed is
+therefore no longer sufficient, and **a trusted certificate is a base requirement of the
+system rather than an optional improvement.**
 
-**Known risk:** the client needs a secure context for microphone access. Whether a
-self-signed certificate is enough for `getUserMedia` and for a service worker on Android
-Chrome after the user accepts the warning is **not established** and must be tested in
-WP-06. If it is not enough, the self-signed default conflicts with two-way audio, and
-that conflict has to be resolved rather than discovered late.
+Two supported paths:
+
+1. **Own CA (default).** The deployment generates a local CA and a server certificate
+   signed by it, and publishes the CA certificate for download. The user installs it once
+   on the tablet. Chrome on Android trusts user-installed CAs, so this yields a fully
+   trusted origin with no external dependency — the system stays self-contained.
+2. **Let's Encrypt**, where the server is publicly reachable or a DNS-01 challenge with a
+   real domain is available.
+
+The maintainer's existing home CA can be used instead by supplying certificate and key;
+that is configuration, not a separate code path.
+
+**Consequence for deployment:** the certificate needs a stable hostname. Certificates for
+bare IP addresses are awkward, and Let's Encrypt will not issue for them at all, so the
+LAN needs a resolvable name for the backend — a local DNS entry or mDNS. Tracked in
+WP-10.
+
+**Note for a possible native client:** Android apps have not trusted user-installed CAs by
+default since Android 7. Chrome does, so this affects nothing today, but a native client
+would have to opt in explicitly.
 
 ## Live sessions
 

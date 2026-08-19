@@ -20,7 +20,7 @@
 | API specification | **Code-first**: generated from Fastify schemas, committed |
 | Logging | **`pino`**, structured JSON |
 | Tests | **`node:test`** with `fastify.inject()` |
-| TLS | Terminated by the backend, self-signed generated on first start |
+| TLS | Terminated by the backend; local CA and certificate generated on first start |
 
 One container serves the API and the client application, per ADR-003.
 
@@ -169,21 +169,38 @@ adding one is a small change; starting with one that may not be needed is not
 
 ---
 
-## TLS
+## TLS and certificates
 
-The backend terminates TLS itself and **generates a self-signed certificate on first start
-if none is supplied**. No reverse proxy in the MVP.
+The backend terminates TLS itself. No reverse proxy in the MVP.
 
-ADR-003 established that the client needs HTTPS for microphone access and that a
-self-signed certificate is sufficient for it. Making certificate generation automatic is
-what makes the self-contained default in
-[`constraints.md`](../planning/constraints.md) actually true — a first-time user runs one
-command and gets a working system.
+ADR-003 requires a **genuinely trusted** certificate, because Chrome refuses to register a
+service worker on an origin with a certificate error. Self-signed is therefore not
+sufficient, and the backend must make a trusted certificate easy rather than leaving it to
+the user.
 
-Supplying a certificate from the maintainer's own CA is configuration, not a code path:
-if cert and key are provided, they are used.
+On first start, if no certificate is supplied, the backend **generates a local CA and a
+server certificate signed by it**, and serves the CA certificate at a well-known path so
+the tablet can be provisioned in one step. That keeps the system self-contained while
+producing an origin the browser actually trusts.
 
----
+Supplying certificate and key — from the maintainer's existing home CA, or from Let's
+Encrypt where the server is public — is configuration, not a separate code path.
+
+The certificate needs a stable hostname; see WP-10.
+
+## Serving the client
+
+**The backend serves the PWA from the same origin as the API.** One container, one
+certificate, one port.
+
+Same origin is not just convenient, it removes work: no CORS configuration, and a service
+worker scope that covers the app shell and the API calls together. Static assets are
+served with cache headers that let the service worker manage revalidation, and the API is
+mounted under `/api/v1` so the two never collide.
+
+The alternative — a separate container for the client — would need its own certificate and
+either a second origin with CORS or a reverse proxy to unify them. Neither buys anything
+at this size.
 
 ## Consequences
 

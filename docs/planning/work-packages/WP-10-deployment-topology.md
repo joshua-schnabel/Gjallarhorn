@@ -83,16 +83,28 @@ From [`../constraints.md`](../constraints.md):
   images and verify the ARM one actually runs, rather than assuming it.
 - The broker is an **existing Mosquitto**, external to this compose stack. A Mosquitto
   container is for development only.
-- **Self-signed certificates are the default**, generated on first start so a new user
-  gets a working system without arranging a CA. Using the existing home CA is a
-  documented step two, not the default path.
+- **A trusted certificate is a base requirement**, not an optional improvement. Default is
+  a locally generated CA plus server certificate, with the CA certificate served for
+  installation on the tablet. Let's Encrypt where the server is publicly reachable, or a
+  supplied certificate from the maintainer's own CA.
+- One container serves both the API and the PWA.
+
+## Additional task from the certificate decision
+
+- [ ] **Give the backend a stable hostname on the LAN.** Certificates for bare IP
+      addresses are awkward and Let's Encrypt will not issue them at all. A local DNS
+      entry or mDNS name is therefore a deployment prerequisite, not a nicety - the PWA
+      cannot have a trusted origin without one.
+- [ ] Document the one-time CA installation on the tablet, including where the CA
+      certificate is served from.
+- [ ] Decide certificate lifetime and renewal for the local CA path. A certificate that
+      silently expires takes the service worker and the doorbell UI with it.
 
 ## Open questions
 
-- If WP-06 finds that a self-signed certificate does not give the tablet a usable secure
-  context for microphone access, the self-contained default and two-way audio conflict.
-  This package cannot resolve that alone, but it has to carry whichever answer WP-06
-  produces.
-- Should the client be served by the backend container or its own? Cheaper as one
-  service, but it couples their release cycles.
+- Should the client be served by the backend container or its own? **Resolved**: the
+  backend serves it, per ADR-004.
 - Does anything need to survive a Proxmox host migration, or is a volume backup enough?
+- If the deployment is ever made publicly reachable for Let's Encrypt or remote access,
+  what is exposed and what stays internal? The brief excludes remote access from the MVP,
+  so this stays a question rather than a task.

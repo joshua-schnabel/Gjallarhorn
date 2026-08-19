@@ -61,29 +61,38 @@ solvable that way* — so the work is to test that condition, not to assume it.
 
 From [`../constraints.md`](../constraints.md):
 
-- Target device is a **Google Pixel Tablet on Android 14**, on a stand. A certificate can
-  be installed on it.
-- **The default deployment uses self-signed certificates**, so a new user can start
-  without setting up a CA. Using the existing home CA is step two.
+- Target device is a **Google Pixel Tablet on Android 14**, on a stand.
+- **A service worker is required**, so the client is an installable PWA.
+- **A trusted certificate is a base requirement**: an own CA by default, or Let's Encrypt
+  where the server is public. Self-signed is not sufficient - Chrome refuses to register
+  a service worker on an origin with a certificate error.
+- The backend serves the PWA from the same origin as the API.
 - **Several tablets receive the ring notification**, but only one holds the media session.
 
-## The risk this package resolves first
+## Resolved
 
-The self-signed default and two-way audio may be in conflict. `getUserMedia` requires a
-secure context. Whether Android Chrome grants a full secure context - including service
-worker registration for a PWA - after the user accepts a self-signed certificate warning
-is **not established**, and general documentation will not settle it.
+The suspected conflict between certificates and two-way audio turned out to be a clean
+split, and it is what drove the certificate decision:
 
-Test this early. If a self-signed certificate is not enough, then either the default
-stops being self-signed, or the MVP ships without tablet-side audio. Both are decisions
-for the maintainer to make rather than discover in Phase 4. A locally trusted certificate
-installed on the tablet - which the maintainer has said is possible - is the likely
-escape hatch, but it weakens "self-contained by default".
+- `getUserMedia` and WebRTC **keep working** on an accepted self-signed origin.
+- Service worker registration is **refused outright** on such an origin.
+
+Since a service worker is required, the certificate has to be genuinely trusted. See
+[`../../adr/ADR-003-client-platform.md`](../../adr/ADR-003-client-platform.md).
+
+## Outcome
+
+Decided in ADR-003: an installable PWA with a service worker, served by the backend over
+HTTPS with a trusted certificate. Native Android is not needed for the stated
+requirements, and the one requirement that would force it is recorded.
 
 ## Open questions
 
-- Must the client work when the backend is down, for example to still receive a ring?
-  That would argue for MQTT over WebSocket directly, and interacts with ADR-002.
-- With several tablets notified but only one able to take the call, what happens to the
-  others when one answers? That is a UI question as much as a signaling one, and it
-  belongs in ADR-003 as well as ADR-001.
+- **What is the service worker for?** Installability and the offline app shell work on an
+  isolated LAN. Notification while the app is *closed* needs Web Push, which Chrome on
+  Android delivers through the OS FCM client - so it needs internet on both the backend
+  and the tablet. Raised with the maintainer.
+- Should a second tablet be able to take over a call, or only observe that it was
+  answered? Interacts with the single-media-peer constraint in ADR-001.
+- What update strategy does the service worker need? A stale cached shell on a wall tablet
+  nobody reloads is a real failure mode.
