@@ -1,0 +1,898 @@
+openapi: 3.1.0
+
+info:
+  title: Doorbell API
+  version: 1.0.0
+  summary: Local API for a solar-powered video doorbell
+  description: |
+    Versioned HTTP API for the door device, the tablet client and operations.
+
+    Design notes that explain the shape of this API:
+
+    - **The door device is unpowered between events.** It cannot accept inbound
+      connections, so every exchange is device-initiated, including WebRTC signaling.
+    - **The backend stamps wall-clock time.** A cold-booting device has no reliable
+      clock; it reports `deviceUptimeMs` instead.
+    - **Device writes are idempotent.** The device generates the identifier and reuses
+      it across retries, so a retried upload does not become a duplicate event.
+    - **Media does not traverse this API.** WebRTC runs directly between device and
+      tablet; the backend only relays SDP and ICE.
+    - The tablet receives rings over a WebSocket, documented separately in
+      `websocket.md` because it is not expressible in OpenAPI.
+
+    See `../architecture.md` and `../adr/` for the reasoning.
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://{host}:{port}/api/v1
+    description: Local deployment
+    variables:
+      host:
+        default: doorbell.lan
+        description: Configured hostname; the TLS certificate is issued for this name
+      port:
+        default: "8443"
+
+tags:
+  - name: device
+    description: Called by the door device. Authenticated with a device token.
+  - name: signaling
+    description: WebRTC signaling relay. Device side only; the tablet uses the WebSocket.
+  - name: client
+    description: Called by the tablet application.
+  - name: live
+    description: Live session lifecycle.
+  - name: ops
+    description: Health and diagnostics.
+
+security:
+  - clientToken: []
+
+paths:
+
+  /health:
+    get:
+      tags: [ops]
+      summary: Liveness and readiness
+      description: |
+        Deliberately minimal. It is reachable without authentication so that container
+        health checks work, and therefore reports no configuration detail.
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: Service is not ready
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /devices:
+    get:
+      tags: [client]
+      summary: List devices
+      operationId: listDevices
+      responses:
+        "200":
+          description: Devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /devices/{deviceId}:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    get:
+      tags: [client]
+      summary: Get a device
+      operationId: getDevice
+      responses:
+        "200":
+          description: Device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /devices/{deviceId}/events:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    post:
+      tags: [device]
+      summary: Report an event
+      description: |
+        Idempotent on `id`. Re-posting an identifier that already exists returns `200`
+        with the stored event rather than creating a second one. This matters because the
+        device retries from a local queue after a failed upload, reusing the original
+        identifier.
+
+        A `motion` event inside the server-side cooldown is stored but not republished to
+        MQTT. The server-side cooldown protects the event history from duplicates; it
+        cannot protect the battery, because the energy is already spent by the time this
+        request arrives.
+      operationId: createEvent
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventCreate"
+            examples:
+              ring:
+                summary: Doorbell pressed
+                value:
+                  id: 01J8F3QK7XB2N4
+                  type: ring
+                  deviceUptimeMs: 4820
+                  batteryVoltage: 3.91
+                  rssi: -61
+                  wakeReason: button
+              motion:
+                summary: Motion detected
+                value:
+                  id: 01J8F3R2M9C7P1
+                  type: motion
+                  deviceUptimeMs: 3900
+                  batteryVoltage: 3.9
+                  rssi: -63
+                  wakeReason: motion
+      responses:
+        "201":
+          description: Event stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "200":
+          description: Event already existed; the stored event is returned unchanged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /devices/{deviceId}/snapshots:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    post:
+      tags: [device]
+      summary: Upload a snapshot
+      description: |
+        Multipart upload of a single JPEG with its metadata.
+
+        Idempotent on `id`, for the same reason as events.
+
+        The declared content type is not trusted: the file is accepted only if its actual
+        bytes begin with a JPEG signature. Uploads larger than the configured limit are
+        rejected with `413`.
+      operationId: createSnapshot
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [id, image]
+              properties:
+                id:
+                  $ref: "#/components/schemas/Ulid"
+                eventId:
+                  description: Event this snapshot belongs to, when there is one
+                  $ref: "#/components/schemas/Ulid"
+                deviceUptimeMs:
+                  type: integer
+                  minimum: 0
+                image:
+                  type: string
+                  format: binary
+                  contentMediaType: image/jpeg
+            encoding:
+              image:
+                contentType: image/jpeg
+      responses:
+        "201":
+          description: Snapshot stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "200":
+          description: Snapshot already existed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          description: Upload exceeds the configured size limit
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Content is not a JPEG
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /devices/{deviceId}/telemetry:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    post:
+      tags: [device]
+      summary: Report telemetry
+      description: |
+        Sent at least once per activation, typically just before power-off.
+
+        `wakeToNetworkMs` is not incidental: it is the least certain input in the power
+        budget, it costs nothing but a timestamp, and collecting it over time turns an
+        assumption into data.
+      operationId: createTelemetry
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelemetryCreate"
+            examples:
+              endOfActivation:
+                value:
+                  deviceUptimeMs: 11400
+                  wakeReason: motion
+                  bootCount: 1043
+                  batteryVoltage: 3.9
+                  rssi: -63
+                  freeHeapBytes: 4212288
+                  wakeToNetworkMs: 4180
+                  uploadMs: 820
+                  queuedEvents: 0
+      responses:
+        "201":
+          description: Telemetry stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Telemetry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /devices/{deviceId}/signaling:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    get:
+      tags: [signaling]
+      summary: Open the device signaling stream
+      description: |
+        Server-sent events. The device opens this after reporting a `ring` and holds it
+        for the wake window; the backend pushes signaling messages down it.
+
+        This shape — SSE down, POST up — mirrors Espressif's `doorbell_local`, which is
+        the template for our `esp_peer_signaling` implementation. It exists because the
+        device cannot accept inbound connections.
+
+        The stream closes when the wake window expires, when the session ends, or when
+        the device disconnects.
+      operationId: openDeviceSignaling
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: Event stream of signaling messages
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Each SSE `data:` field carries one JSON `SignalingMessage`.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: A signaling stream is already open for this device
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    post:
+      tags: [signaling]
+      summary: Send a signaling message from the device
+      operationId: postDeviceSignaling
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignalingMessage"
+      responses:
+        "202":
+          description: Message relayed to the peer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: No active session to relay to
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /devices/{deviceId}/live/start:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    post:
+      tags: [live]
+      summary: Claim the live session
+      description: |
+        Called by a tablet accepting a ring.
+
+        **First accept wins.** Several tablets are notified, but only one holds media. A
+        second caller receives `409` and should dismiss its ring view rather than fail
+        silently.
+
+        Fails with `409` if the device is not currently reachable — that is, outside its
+        wake window. There is no queueing: a device that has powered off cannot be
+        called.
+      operationId: startLiveSession
+      responses:
+        "201":
+          description: Session claimed by this client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Already claimed by another client, or the device is not awake
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /devices/{deviceId}/live/stop:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    post:
+      tags: [live]
+      summary: End the live session
+      description: |
+        Ends the session and sends `bye` to the device. Idempotent: ending a session that
+        has already ended returns `204`.
+      operationId: stopLiveSession
+      responses:
+        "204":
+          description: Session ended
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /events:
+    get:
+      tags: [client]
+      summary: List events, newest first
+      operationId: listEvents
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Before"
+        - name: deviceId
+          in: query
+          schema:
+            $ref: "#/components/schemas/DeviceIdString"
+        - name: type
+          in: query
+          schema:
+            $ref: "#/components/schemas/EventType"
+      responses:
+        "200":
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Event"
+                  nextBefore:
+                    description: Cursor for the next page; absent when there are no more
+                    type: string
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /snapshots:
+    get:
+      tags: [client]
+      summary: List snapshot metadata, newest first
+      operationId: listSnapshots
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Before"
+        - name: deviceId
+          in: query
+          schema:
+            $ref: "#/components/schemas/DeviceIdString"
+      responses:
+        "200":
+          description: Snapshots
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Snapshot"
+                  nextBefore:
+                    type: string
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /snapshots/{snapshotId}:
+    parameters:
+      - $ref: "#/components/parameters/SnapshotId"
+    get:
+      tags: [client]
+      summary: Get snapshot metadata
+      operationId: getSnapshot
+      responses:
+        "200":
+          description: Snapshot metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /snapshots/{snapshotId}/image:
+    parameters:
+      - $ref: "#/components/parameters/SnapshotId"
+    get:
+      tags: [client]
+      summary: Get the snapshot image
+      description: |
+        Separate from the metadata so that listing a history page does not transfer
+        images, and so the image can be cached independently. Supports conditional
+        requests; the content never changes once stored.
+      operationId: getSnapshotImage
+      responses:
+        "200":
+          description: JPEG image
+          headers:
+            ETag:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: Not modified
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /auth/pair:
+    post:
+      tags: [client]
+      summary: Exchange a pairing code for a client token
+      description: |
+        One-time setup for a tablet. The pairing code is configured on the server and is
+        valid for a limited window.
+
+        Pairing codes are rate limited and single use; a device at the front door does
+        not use this path, and a tablet uses it once.
+      operationId: pairClient
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pairingCode, clientName]
+              properties:
+                pairingCode:
+                  type: string
+                  minLength: 6
+                  maxLength: 64
+                clientName:
+                  type: string
+                  maxLength: 64
+                  description: Shown in the client list, e.g. "Kitchen tablet"
+      responses:
+        "201":
+          description: Paired
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, clientId]
+                properties:
+                  token:
+                    type: string
+                    description: Bearer token; store in the platform keystore
+                  clientId:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Pairing code invalid or expired
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: Too many attempts
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+components:
+
+  securitySchemes:
+    deviceToken:
+      type: http
+      scheme: bearer
+      description: |
+        Long-lived token provisioned onto the device. It is the only secret the device
+        holds, because the device is the component an attacker can physically reach.
+    clientToken:
+      type: http
+      scheme: bearer
+      description: Issued by `/auth/pair`, stored in the Android keystore.
+
+  parameters:
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/DeviceIdString"
+    SnapshotId:
+      name: snapshotId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Ulid"
+    Limit:
+      name: limit
+      in: query
+      description: Maximum items to return
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    Before:
+      name: before
+      in: query
+      description: |
+        Cursor: return items strictly older than this timestamp. Cursor paging rather than
+        offset, because the list is append-only and offsets shift as new events arrive.
+      schema:
+        type: string
+        format: date-time
+
+  responses:
+    BadRequest:
+      description: Request failed validation
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: No such resource
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+
+    Ulid:
+      type: string
+      pattern: "^[0-9A-HJKMNP-TV-Z]{26}$"
+      description: |
+        Device-generated identifier. Lexicographically sortable and time-ordered, which
+        makes it usable as both a primary key and a cursor.
+      examples: ["01J8F3QK7XB2N4ZZZZZZZZZZZZ"]
+
+    DeviceIdString:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+      examples: ["frontdoor"]
+
+    EventType:
+      type: string
+      enum: [ring, motion]
+
+    WakeReason:
+      type: string
+      enum: [button, motion, unknown]
+      description: |
+        `unknown` means the power latch closed without either line asserting. It is a
+        fault worth reporting, not padding — it would otherwise surface only as
+        unexplained battery drain.
+
+    DeviceState:
+      type: string
+      enum: [sleeping, awake, live, unreachable]
+      description: |
+        Derived by the backend from event arrival and a staleness timeout, not from a
+        connection. `sleeping` is the normal, healthy state; `unreachable` means
+        something is actually wrong.
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        mqttConnected:
+          type: boolean
+
+    Problem:
+      type: object
+      description: RFC 9457 problem details
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        requestId:
+          type: string
+          description: Correlates with the structured logs
+
+    EventCreate:
+      type: object
+      required: [id, type]
+      properties:
+        id:
+          $ref: "#/components/schemas/Ulid"
+        type:
+          $ref: "#/components/schemas/EventType"
+        deviceUptimeMs:
+          type: integer
+          minimum: 0
+          description: |
+            Milliseconds since boot. The device has no reliable wall clock on a cold
+            boot, so it reports elapsed time and the backend supplies the timestamp.
+        wakeReason:
+          $ref: "#/components/schemas/WakeReason"
+        batteryVoltage:
+          type: number
+          minimum: 0
+          maximum: 6
+        rssi:
+          type: integer
+          minimum: -120
+          maximum: 0
+        snapshotId:
+          $ref: "#/components/schemas/Ulid"
+
+    Event:
+      type: object
+      required: [id, deviceId, type, occurredAt]
+      properties:
+        id:
+          $ref: "#/components/schemas/Ulid"
+        deviceId:
+          $ref: "#/components/schemas/DeviceIdString"
+        type:
+          $ref: "#/components/schemas/EventType"
+        occurredAt:
+          type: string
+          format: date-time
+          description: Stamped by the backend on arrival
+        deviceUptimeMs:
+          type: integer
+        wakeReason:
+          $ref: "#/components/schemas/WakeReason"
+        batteryVoltage:
+          type: number
+        rssi:
+          type: integer
+        snapshotId:
+          $ref: "#/components/schemas/Ulid"
+        publishedToMqtt:
+          type: boolean
+          description: False when suppressed by the server-side motion cooldown
+
+    Snapshot:
+      type: object
+      required: [id, deviceId, capturedAt, byteSize]
+      properties:
+        id:
+          $ref: "#/components/schemas/Ulid"
+        deviceId:
+          $ref: "#/components/schemas/DeviceIdString"
+        eventId:
+          $ref: "#/components/schemas/Ulid"
+        capturedAt:
+          type: string
+          format: date-time
+        byteSize:
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+        imageUrl:
+          type: string
+          format: uri-reference
+
+    TelemetryCreate:
+      type: object
+      properties:
+        deviceUptimeMs:
+          type: integer
+          minimum: 0
+        wakeReason:
+          $ref: "#/components/schemas/WakeReason"
+        bootCount:
+          type: integer
+          minimum: 0
+        batteryVoltage:
+          type: number
+        rssi:
+          type: integer
+        freeHeapBytes:
+          type: integer
+        wakeToNetworkMs:
+          type: integer
+          description: Wake to network ready. Feeds the power budget.
+        uploadMs:
+          type: integer
+        queuedEvents:
+          type: integer
+          description: Entries still in the device's local queue
+
+    Telemetry:
+      allOf:
+        - $ref: "#/components/schemas/TelemetryCreate"
+        - type: object
+          required: [deviceId, receivedAt]
+          properties:
+            deviceId:
+              $ref: "#/components/schemas/DeviceIdString"
+            receivedAt:
+              type: string
+              format: date-time
+
+    Device:
+      type: object
+      required: [deviceId, state]
+      properties:
+        deviceId:
+          $ref: "#/components/schemas/DeviceIdString"
+        name:
+          type: string
+        state:
+          $ref: "#/components/schemas/DeviceState"
+        lastSeen:
+          type: string
+          format: date-time
+        lastEventId:
+          $ref: "#/components/schemas/Ulid"
+        lastRingAt:
+          type: string
+          format: date-time
+        lastMotionAt:
+          type: string
+          format: date-time
+        batteryVoltage:
+          type: number
+        batteryPercent:
+          type: integer
+          description: Estimated from voltage; `batteryVoltage` is the measurement
+        rssi:
+          type: integer
+        wakeWindowEndsAt:
+          type: string
+          format: date-time
+          description: |
+            When the device stops being reachable. Absent while it is asleep. A client
+            should not offer a call button after this moment.
+
+    LiveSession:
+      type: object
+      required: [sessionId, deviceId, expiresAt]
+      properties:
+        sessionId:
+          type: string
+        deviceId:
+          $ref: "#/components/schemas/DeviceIdString"
+        expiresAt:
+          type: string
+          format: date-time
+          description: Never later than the device's wake window end
+
+    SignalingMessage:
+      type: object
+      required: [type]
+      properties:
+        sessionId:
+          type: string
+        type:
+          type: string
+          enum: [offer, answer, candidate, bye, peer-waiting]
+          description: |
+            Maps onto `esp_peer_signaling`'s message types: SDP, CANDIDATE and BYE.
+            `peer-waiting` is carried as a customised message.
+        sdp:
+          type: string
+        candidate:
+          type: string
+        sdpMid:
+          type: string
+        sdpMLineIndex:
+          type: integer

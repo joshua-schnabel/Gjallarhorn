@@ -40,8 +40,8 @@ Status values: `todo`, `in progress`, `blocked`, `done`.
 | [WP-06](work-packages/WP-06-client-platform.md) | Client platform decision | done | WP-01 | `docs/adr/ADR-003-client-platform.md` |
 | [WP-07](work-packages/WP-07-backend-stack.md) | Backend stack decision | done | WP-01 | `docs/adr/ADR-004-backend-stack.md` |
 | [WP-08](work-packages/WP-08-system-architecture.md) | System architecture and diagrams | done | WP-04, WP-05, WP-06, WP-07 | `docs/architecture/` |
-| [WP-09](work-packages/WP-09-api-design.md) | REST API design | **next** | WP-08 | `docs/api/openapi.yaml` |
-| [WP-10](work-packages/WP-10-deployment-topology.md) | Deployment topology | todo | WP-08 | `deploy/`, `docs/architecture/deployment.md` |
+| [WP-09](work-packages/WP-09-api-design.md) | REST API design | done | WP-08 | `docs/api/openapi.yaml` |
+| [WP-10](work-packages/WP-10-deployment-topology.md) | Deployment topology | **next** | WP-08 | `deploy/`, `docs/architecture/deployment.md` |
 
 ### Dependencies
 
