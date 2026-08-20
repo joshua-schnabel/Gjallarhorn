@@ -14,7 +14,7 @@
 | HTTP framework | **Fastify** |
 | Schemas and types | **TypeBox**, schema-first with types derived |
 | Database | **SQLite via `better-sqlite3`** |
-| Base image | **`node:<lts>-bookworm-slim`** — glibc, **not Alpine** |
+| Base image | **`node:24-bookworm-slim`** — glibc; Alpine also verified to work |
 | Migrations | Forward-only SQL files, tracked in a table. No ORM. |
 | MQTT | **`mqtt.js`** |
 | API specification | **Code-first**: generated from Fastify schemas, committed |
@@ -85,23 +85,41 @@ snapshot history, on a service intended to run unattended for a long time. A
 release-candidate storage layer is the wrong place to save a dependency.
 
 **`better-sqlite3`** is mature, synchronous — which suits SQLite's actual behaviour and
-keeps the code straightforward — and fast. Its cost is being a native module.
+keeps the code straightforward — and fast. Its cost is being a native module, which is
+why the base image needed checking rather than assuming.
 
-### Why the base image is Debian, not Alpine
+### Base image: Debian slim — corrected
 
-`better-sqlite3` ships prebuilt binaries for common platforms including **linux/arm64 on
-glibc**. The gap is **musl**: Alpine builds frequently find no prebuild and fall back to
-compiling from source, which needs a full C toolchain in the image.
+**The original reasoning here was wrong, and testing refuted it.**
 
-So `node:<lts>-bookworm-slim` is chosen deliberately, not by habit. It gives prebuilt
-binaries on both `linux/amd64` (the Proxmox host) and `linux/arm64` (the stated
-requirement) with no compiler in the runtime image.
+This ADR first claimed that `better-sqlite3` lacks arm64 prebuilds for musl, and that
+Alpine would therefore fall back to compiling from source. That was based on reported
+issues rather than a test. WP-10 ran the test:
 
-**This must be verified, not assumed.** A multi-architecture build with
-`docker buildx --platform linux/amd64,linux/arm64` that actually *runs* on both is an
-acceptance criterion of [WP-10](../planning/work-packages/WP-10-deployment-topology.md).
-A native module that silently compiles during build is a slow build; one that silently
-fails on arm64 is a broken deployment discovered late.
+| Image, `linux/arm64` under emulation | Install | Native module loads and queries |
+| --- | --- | --- |
+| `node:24-bookworm-slim` | 6 s, prebuilt | yes |
+| `node:24-alpine` | 6 s, prebuilt | yes |
+
+Both work. Neither needs a compiler in the image. The musl gap that drove the original
+decision does not exist at these versions.
+
+**The decision stays `node:24-bookworm-slim`, but for smaller and honest reasons:**
+
+- **musl's DNS resolver differs from glibc's**, historically around search domains and
+  TCP fallback for large responses. This project makes DNS a prerequisite and resolves a
+  configured hostname, so the resolver is on a path that matters.
+- **Image size is not a binding constraint here.** The deployment target is a Proxmox
+  host, not a constrained SBC; ARM must be *supported*, not optimised for.
+
+**Alpine is now a legitimate alternative**, and if image size ever becomes a real
+constraint the switch is cheap and evidence already exists that it works. This is no
+longer a forced choice, and it should not be quoted as one.
+
+**What survives from the original reasoning** is the process rule: a multi-architecture
+build must be *verified to run*, not assumed. A native module that silently compiles
+during build is a slow build; one that silently fails on arm64 is a broken deployment
+found late.
 
 ### Migrations
 
@@ -224,9 +242,8 @@ at this size.
 
 ## Open questions
 
-- Which Node LTS line at implementation time, and does `better-sqlite3` publish
-  arm64 prebuilds for it? The answer changes with each Node major, so it is checked when
-  Phase 2 starts rather than pinned here.
+- Node 24 was verified. The answer can change with each Node major, so the arm64 install
+  check is worth repeating on any Node upgrade rather than trusted once.
 - Does the live-session coordination in ADR-001 need state that outlives a process
   restart, or is in-memory enough? In-memory until something shows otherwise — a session
   does not survive the device's wake window anyway.

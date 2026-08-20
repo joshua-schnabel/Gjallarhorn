@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | todo |
+| **Status** | done |
 | **Phase** | 0 |
 | **Depends on** | WP-08 |
 | **Blocks** | Phase 2, Phase 5 |
@@ -99,6 +99,35 @@ From [`../constraints.md`](../constraints.md):
       certificate is served from.
 - [ ] Decide certificate lifetime and renewal for the local CA path. A certificate that
       silently expires takes the service worker and the doorbell UI with it.
+
+## Outcome
+
+- [`../../../deploy/docker-compose.yml`](../../../deploy/docker-compose.yml) - validated
+  with `docker compose config` (exit 0). Production starts `backend` alone; `--profile dev`
+  adds Mosquitto.
+- [`../../../deploy/.env.example`](../../../deploy/.env.example) - every variable
+  documented, no values.
+- [`../../architecture/deployment.md`](../../architecture/deployment.md) - ports, TLS,
+  persistence, secrets, troubleshooting.
+
+Deliverable 11 of the project brief.
+
+### Verified, not assumed
+
+**Multi-architecture.** `better-sqlite3` was installed and executed under `linux/arm64`
+emulation in both `node:24-bookworm-slim` and `node:24-alpine`: 6 s, prebuilt, no compiler,
+module loads and queries. **This refuted ADR-004's original claim** that musl lacks arm64
+prebuilds, and that ADR has been corrected. The base image stays Debian slim for smaller
+reasons - musl resolver differences on a project that depends on DNS - and Alpine is now
+recorded as a legitimate alternative.
+
+**Compose profiles.** Confirmed that Mosquitto does not start without `--profile dev`, so
+production cannot accidentally run a second broker.
+
+**One port.** The whole deployment exposes 8443/TCP. No UDP media range, no TURN. That is
+the operational payoff of ADR-001 choosing direct peer-to-peer: had Janus been selected,
+this would also carry ~20000 UDP ports or a host-networking requirement that diverges
+between Docker Desktop and the Proxmox host.
 
 ## Open questions
 

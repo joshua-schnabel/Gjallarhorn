@@ -3,10 +3,12 @@
 A solar- and battery-powered smart video doorbell built on an ESP32-P4, with a local
 server and an Android tablet client. Designed to run inside the local network.
 
-**Status: Phase 0 — architecture and technical spikes.** No product code has been written
-yet. The hardware selection, power budget and all four architecture decisions are
-settled. What remains in Phase 0 is the system architecture, the API design and the
-deployment topology.
+**Status: Phase 0 complete.** All twelve deliverables from the project brief are in
+place: architecture and sequence diagrams, four ADRs, the firmware state machine, the
+REST API, the MQTT schema, the deployment topology and the hardware parameter list. No
+product code has been written yet — Phase 1 is the firmware.
+
+One item stays open by necessity: the hardware baseline waits on parts being sourced.
 
 ---
 
@@ -44,9 +46,13 @@ deployment topology.
 - **[`AGENTS.md`](AGENTS.md)** — how to work in this repository. Read before changing
   anything.
 
-Architecture decision records land in `docs/adr/` as they are made. The API specification
-lands in `docs/api/openapi.yaml`. Both directories are currently empty by design — their
-content is the output of Phase 0 work packages, not a starting point.
+- **[`docs/architecture.md`](docs/architecture.md)** — how the system fits together,
+  with sequence diagrams and the firmware state machine under
+  [`docs/architecture/`](docs/architecture/).
+- **[`docs/adr/`](docs/adr/)** — the four architecture decisions and why they were made.
+- **[`docs/api/openapi.yaml`](docs/api/openapi.yaml)** — the REST API, plus
+  [`websocket.md`](docs/api/websocket.md) for the tablet protocol.
+- **[`docs/mqtt.md`](docs/mqtt.md)** — topics, payloads, QoS and retain.
 
 ---
 
