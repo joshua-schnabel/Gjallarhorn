@@ -147,6 +147,30 @@ measurement. The compromise adopted: the budget states a *calculated estimate wi
 assumptions visible*, never a bare battery-life claim, and the distinction is kept in the
 wording. See [`../power-budget.md`](../power-budget.md).
 
+## Development environment
+
+Established 2026-08-21 by checking the machine rather than assuming.
+
+**Available:** Node.js 24, npm, Python 3.14, Docker, gh.
+
+**Not available:** ESP-IDF, C compiler, CMake, Ninja. `IDF_PATH` is unset and there is no
+ESP-IDF installation.
+
+Consequence: **firmware C code cannot currently be compiled or tested here.** Writing
+firmware in this state would produce unverified code for a device that also cannot be
+flashed, which is the opposite of how this project is meant to work (AGENTS.md section 3).
+
+The backend and its tests, by contrast, are fully buildable and testable now, and Docker
+works - multi-architecture behaviour has already been verified through it.
+
+Two ways forward, to be decided per phase rather than once:
+
+1. **Install ESP-IDF** when firmware work begins. It is a multi-gigabyte install that
+   changes the environment, so it needs the maintainer's go-ahead.
+2. **Build the backend first.** It is unblocked, testable, and it is a hard dependency of
+   Phase 1's own acceptance target - `motion -> wake -> snapshot -> upload` has nothing to
+   upload to until the backend exists.
+
 ## Git workflow
 
 - Default branch: **`main`**.
