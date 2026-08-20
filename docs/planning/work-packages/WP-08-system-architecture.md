@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | todo |
+| **Status** | done |
 | **Phase** | 0 |
 | **Depends on** | WP-04, WP-05, WP-06, WP-07 |
 | **Blocks** | WP-09, WP-10, Phase 1 |
@@ -70,6 +70,34 @@ speculation.
   in the diagram or the accompanying text.
 - Diagrams are Mermaid in version control, not binary images.
 - The reasoning is recorded, not just the result (AGENTS.md section 10).
+
+## Outcome
+
+Written:
+
+- [`../../architecture.md`](../../architecture.md) - system diagram, components, data
+  flows, trust boundaries, invariants
+- [`../../architecture/sequences.md`](../../architecture/sequences.md) - ring, motion,
+  live session, failure paths
+- [`../../architecture/firmware-state-machine.md`](../../architecture/firmware-state-machine.md)
+- [`../../architecture/configuration.md`](../../architecture/configuration.md)
+
+Covers deliverables 1, 2, 3, 4 and 8 of the project brief.
+
+### The finding this package produced
+
+**The motion cooldown cannot be implemented in software.** The device is unpowered during
+the cooldown, so it holds no timer. If the PIR re-asserts as the latch releases, the device
+boots again - sustained motion becomes sustained booting, which is exactly what the
+requirement exists to prevent.
+
+It is solved by an edge-triggered latch plus the PIR's own adjustable hold time. That
+changed the sensor choice from AM312 to HC-SR501: 38 uA more quiescent, about 1.4 mAh/day,
+which pays for itself after two prevented boots. Recorded in
+[`../../hardware.md`](../../hardware.md) section 4.
+
+The cost is real and is written down rather than hidden: the cooldown becomes a
+potentiometer instead of a configuration value.
 
 ## Open questions
 

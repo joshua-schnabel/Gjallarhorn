@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | todo |
+| **Status** | done |
 | **Phase** | 0 |
 | **Depends on** | WP-01 |
 | **Blocks** | WP-08, Phase 2 |
@@ -70,15 +70,23 @@ From [`../constraints.md`](../constraints.md):
   multi-architecture and no dependency may be x86-only. This is a real filter on the
   SQLite driver choice: a native module must build for both, which argues for
   `node:sqlite` or for a prebuilt-binary strategy that genuinely covers arm64.
-- The default deployment is **self-contained with self-signed certificates**, so
-  certificate generation on first start is a backend or deployment concern rather than
-  something the user is expected to arrange.
+- **A trusted certificate is a base requirement.** The backend generates a local CA and
+  server certificate on first start and serves the CA certificate for download, so the
+  tablet can be provisioned in one step. Supplying an own certificate, or one from
+  Let's Encrypt, is configuration.
+- **The backend serves the PWA from the same origin as the API** - one container, one
+  certificate, one port, and a service worker scope covering both.
+
+## Outcome
+
+Decided in [`../../adr/ADR-004-backend-stack.md`](../../adr/ADR-004-backend-stack.md):
+Fastify with TypeBox schemas, `better-sqlite3` on a glibc base image, `mqtt.js`, `pino`,
+`node:test`, and a code-first OpenAPI document.
 
 ## Open questions
 
-- Does the backend also serve the client application, or is that a separate container?
-  Interacts with WP-06's secure-context finding and with WP-10.
-- Does the backend terminate TLS itself or sit behind a reverse proxy? The architecture
-  must permit HTTPS, and the client needs a secure context for microphone access.
-- Is a single process sufficient, or does live-session coordination need separate
-  handling? Keep it simple until WP-04 shows a reason otherwise (AGENTS.md section 4).
+- Which Node LTS line at implementation time, and does `better-sqlite3` publish arm64
+  prebuilds for it? Checked when Phase 2 starts rather than pinned now.
+- Does live-session coordination need state that outlives a process restart? In-memory
+  until something shows otherwise.
+- Snapshot retention policy. Needed before this runs unattended, but not MVP scope.

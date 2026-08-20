@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | todo |
+| **Status** | done |
 | **Phase** | 0 |
 | **Depends on** | WP-03 (done) |
 | **Blocks** | WP-08, Phase 4, Phase 5 |

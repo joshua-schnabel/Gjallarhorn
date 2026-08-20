@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | todo |
+| **Status** | done |
 | **Phase** | 0 |
 | **Depends on** | WP-01 |
 | **Blocks** | WP-08, Phase 3 |
@@ -61,29 +61,44 @@ solvable that way* — so the work is to test that condition, not to assume it.
 
 From [`../constraints.md`](../constraints.md):
 
-- Target device is a **Google Pixel Tablet on Android 14**, on a stand. A certificate can
-  be installed on it.
-- **The default deployment uses self-signed certificates**, so a new user can start
-  without setting up a CA. Using the existing home CA is step two.
-- **Several tablets receive the ring notification**, but only one holds the media session.
+- **Google Pixel Tablet, Android 14**, on a stand, permanently powered, **display not
+  permanently on**.
+- **On a ring the app must come to the front like an incoming call.**
+- **No FCM.** A persistent connection from the tablet is acceptable.
+- **A trusted certificate is a base requirement**: local CA by default, Let's Encrypt
+  where the server is public.
+- Several tablets are notified; only one holds the media session.
 
-## The risk this package resolves first
+## Outcome
 
-The self-signed default and two-way audio may be in conflict. `getUserMedia` requires a
-secure context. Whether Android Chrome grants a full secure context - including service
-worker registration for a PWA - after the user accepts a self-signed certificate warning
-is **not established**, and general documentation will not settle it.
+Decided in [`../../adr/ADR-003-client-platform.md`](../../adr/ADR-003-client-platform.md):
+**a native Android app hosting the web UI in a WebView**, with a foreground service for
+the persistent WebSocket and a full-screen intent to raise the app on a ring.
 
-Test this early. If a self-signed certificate is not enough, then either the default
-stops being self-signed, or the MVP ships without tablet-side audio. Both are decisions
-for the maintainer to make rather than discover in Phase 4. A locally trusted certificate
-installed on the tablet - which the maintainer has said is possible - is the likely
-escape hatch, but it weakens "self-contained by default".
+The ADR went through three versions as the requirements sharpened. The deciding finding:
+no web technology can bring itself to the foreground or hold a connection while the screen
+is off, and the only web route to waking a closed app is push through FCM — which is
+excluded.
+
+## Follow-on work this creates
+
+- [ ] Android app skeleton: foreground service, WebSocket client with bounded reconnect,
+      notification channel, full-screen-intent activity
+- [ ] `network_security_config.xml` opting into user-installed CAs — required, since
+      Android apps have ignored them by default since Android 7
+- [ ] `WebChromeClient.onPermissionRequest` granting camera and microphone; without it
+      `getUserMedia` fails in WebView despite manifest permissions
+- [ ] Onboarding for the three one-time setup steps that all fail silently if skipped:
+      install the CA certificate, grant full-screen intent, exempt from battery
+      optimisation
+- [ ] Verify WebRTC behaviour in WebView on the actual device rather than in Chrome
+- [ ] Signing key and install path onto the tablet
 
 ## Open questions
 
-- Must the client work when the backend is down, for example to still receive a ring?
-  That would argue for MQTT over WebSocket directly, and interacts with ADR-002.
-- With several tablets notified but only one able to take the call, what happens to the
-  others when one answers? That is a UI question as much as a signaling one, and it
-  belongs in ADR-003 as well as ADR-001.
+- Should the app register as a real calling app via **Telecom / ConnectionService**? That
+  makes the full-screen-intent permission automatic and integrates with the system call
+  UI, at the cost of a much larger API surface. Worth evaluating in Phase 3.
+- What happens when a ring is not answered — missed-call notification, and how does its
+  timeout relate to the device's wake window?
+- Should a second tablet be able to take over a call, or only see that it was answered?

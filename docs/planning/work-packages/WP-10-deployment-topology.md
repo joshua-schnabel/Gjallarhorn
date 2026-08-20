@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | todo |
+| **Status** | done |
 | **Phase** | 0 |
 | **Depends on** | WP-08 |
 | **Blocks** | Phase 2, Phase 5 |
@@ -83,16 +83,57 @@ From [`../constraints.md`](../constraints.md):
   images and verify the ARM one actually runs, rather than assuming it.
 - The broker is an **existing Mosquitto**, external to this compose stack. A Mosquitto
   container is for development only.
-- **Self-signed certificates are the default**, generated on first start so a new user
-  gets a working system without arranging a CA. Using the existing home CA is a
-  documented step two, not the default path.
+- **A trusted certificate is a base requirement**, not an optional improvement. Default is
+  a locally generated CA plus server certificate, with the CA certificate served for
+  installation on the tablet. Let's Encrypt where the server is publicly reachable, or a
+  supplied certificate from the maintainer's own CA.
+- One container serves both the API and the PWA.
+
+## Additional task from the certificate decision
+
+- [ ] **Make the hostname a required, configurable setting.** DNS may be assumed to
+      exist; the name may not. No default is sensible, so the backend must fail at
+      startup with a clear message when it is unset, rather than issuing a certificate
+      for a name the tablet will reject.
+- [ ] Document the one-time CA installation on the tablet, including where the CA
+      certificate is served from.
+- [ ] Decide certificate lifetime and renewal for the local CA path. A certificate that
+      silently expires takes the service worker and the doorbell UI with it.
+
+## Outcome
+
+- [`../../../deploy/docker-compose.yml`](../../../deploy/docker-compose.yml) - validated
+  with `docker compose config` (exit 0). Production starts `backend` alone; `--profile dev`
+  adds Mosquitto.
+- [`../../../deploy/.env.example`](../../../deploy/.env.example) - every variable
+  documented, no values.
+- [`../../architecture/deployment.md`](../../architecture/deployment.md) - ports, TLS,
+  persistence, secrets, troubleshooting.
+
+Deliverable 11 of the project brief.
+
+### Verified, not assumed
+
+**Multi-architecture.** `better-sqlite3` was installed and executed under `linux/arm64`
+emulation in both `node:24-bookworm-slim` and `node:24-alpine`: 6 s, prebuilt, no compiler,
+module loads and queries. **This refuted ADR-004's original claim** that musl lacks arm64
+prebuilds, and that ADR has been corrected. The base image stays Debian slim for smaller
+reasons - musl resolver differences on a project that depends on DNS - and Alpine is now
+recorded as a legitimate alternative.
+
+**Compose profiles.** Confirmed that Mosquitto does not start without `--profile dev`, so
+production cannot accidentally run a second broker.
+
+**One port.** The whole deployment exposes 8443/TCP. No UDP media range, no TURN. That is
+the operational payoff of ADR-001 choosing direct peer-to-peer: had Janus been selected,
+this would also carry ~20000 UDP ports or a host-networking requirement that diverges
+between Docker Desktop and the Proxmox host.
 
 ## Open questions
 
-- If WP-06 finds that a self-signed certificate does not give the tablet a usable secure
-  context for microphone access, the self-contained default and two-way audio conflict.
-  This package cannot resolve that alone, but it has to carry whichever answer WP-06
-  produces.
-- Should the client be served by the backend container or its own? Cheaper as one
-  service, but it couples their release cycles.
+- Should the client be served by the backend container or its own? **Resolved**: the
+  backend serves it, per ADR-004.
 - Does anything need to survive a Proxmox host migration, or is a volume backup enough?
+- If the deployment is ever made publicly reachable for Let's Encrypt or remote access,
+  what is exposed and what stays internal? The brief excludes remote access from the MVP,
+  so this stays a question rather than a task.

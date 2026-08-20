@@ -35,13 +35,13 @@ Status values: `todo`, `in progress`, `blocked`, `done`.
 | [WP-01](work-packages/WP-01-repository-skeleton.md) | Repository skeleton and planning | done | — | this roadmap, `docs/hardware.md` |
 | [WP-02](work-packages/WP-02-hardware-baseline.md) | Hardware baseline and component selection | in progress | WP-01 | `docs/hardware.md` |
 | [WP-03](work-packages/WP-03-power-baseline.md) | Power baseline and budget | done | WP-02 | `docs/power-budget.md` |
-| [WP-04](work-packages/WP-04-spike-webrtc.md) | WebRTC architecture spike | **next** | WP-03 | `docs/adr/ADR-001-webrtc-architecture.md` |
-| [WP-05](work-packages/WP-05-spike-mqtt.md) | MQTT architecture and topic schema | todo | WP-01 | `ADR-002`, `docs/mqtt.md` |
-| [WP-06](work-packages/WP-06-client-platform.md) | Client platform decision | todo | WP-01 | `docs/adr/ADR-003-client-platform.md` |
-| [WP-07](work-packages/WP-07-backend-stack.md) | Backend stack decision | todo | WP-01 | `docs/adr/ADR-004-backend-stack.md` |
-| [WP-08](work-packages/WP-08-system-architecture.md) | System architecture and diagrams | todo | WP-04, WP-05, WP-06, WP-07 | `docs/architecture/` |
-| [WP-09](work-packages/WP-09-api-design.md) | REST API design | todo | WP-08 | `docs/api/openapi.yaml` |
-| [WP-10](work-packages/WP-10-deployment-topology.md) | Deployment topology | todo | WP-08 | `deploy/`, `docs/architecture/deployment.md` |
+| [WP-04](work-packages/WP-04-spike-webrtc.md) | WebRTC architecture spike | done | WP-03 | `docs/adr/ADR-001-webrtc-architecture.md` |
+| [WP-05](work-packages/WP-05-spike-mqtt.md) | MQTT architecture and topic schema | done | WP-01 | `ADR-002`, `docs/mqtt.md` |
+| [WP-06](work-packages/WP-06-client-platform.md) | Client platform decision | done | WP-01 | `docs/adr/ADR-003-client-platform.md` |
+| [WP-07](work-packages/WP-07-backend-stack.md) | Backend stack decision | done | WP-01 | `docs/adr/ADR-004-backend-stack.md` |
+| [WP-08](work-packages/WP-08-system-architecture.md) | System architecture and diagrams | done | WP-04, WP-05, WP-06, WP-07 | `docs/architecture/` |
+| [WP-09](work-packages/WP-09-api-design.md) | REST API design | done | WP-08 | `docs/api/openapi.yaml` |
+| [WP-10](work-packages/WP-10-deployment-topology.md) | Deployment topology | done | WP-08 | `deploy/`, `docs/architecture/deployment.md` |
 
 ### Dependencies
 
@@ -71,7 +71,7 @@ depending on whether the device idles cheaply or is switched off entirely betwee
 
 It is now answered. The board's 31.5 mA deep-sleep draw costs ~1220 mAh/day, needing a
 ~12 W panel and a ~21 Ah cell — not a doorbell. With an external latching load switch the
-board is fully unpowered between events: ~57 mAh/day, a 2 W panel and a 3000-5000 mAh
+board is fully unpowered between events: ~58 mAh/day, a 2 W panel and a 3000-5000 mAh
 cell. **A factor of about 21**, so the load switch is a requirement of the design rather
 than an optimisation.
 
@@ -99,7 +99,7 @@ exactly one work package:
 | 4 | Sequence diagram: live call | WP-08 |
 | 5 | Comparison: direct WebRTC vs Espressif doorbell vs Janus | WP-04 |
 | 6 | Comparison: MQTT via backend vs direct vs hybrid | WP-05 |
-| 7 | Client recommendation: PWA vs native Android | WP-06 |
+| 7 | Client recommendation: web vs native Android | WP-06 |
 | 8 | Firmware state machine | WP-08 |
 | 9 | Proposed REST API | WP-09 |
 | 10 | Proposed MQTT schema | WP-05 |
@@ -131,9 +131,22 @@ and snapshot intake, telemetry, persistence, MQTT publishing per ADR-002, health
 tests. End-to-end target: `ESP button -> backend -> MQTT` and
 `ESP motion -> snapshot -> backend -> storage`.
 
-**Phase 3 — client.** The platform from ADR-003. Device status, ring notification,
-motion and snapshot history, error display, reconnect. Deliberately ahead of WebRTC:
-everything except live media can be built and tested against the backend alone.
+**Phase 3 — client.** Per ADR-003 this is now **two pieces**: a native Android shell and
+the web UI it hosts.
+
+The shell is small but not optional — a foreground service holding the WebSocket, a
+notification channel, and a full-screen-intent activity that turns the screen on and
+raises the app when the doorbell rings. It also needs `network_security_config.xml` to
+trust the user-installed CA, and `onPermissionRequest` plumbing so WebRTC works in the
+WebView.
+
+The UI is web: device status, ring view, motion and snapshot history, error display,
+reconnect. Deliberately ahead of WebRTC, since everything except live media can be built
+against the backend alone.
+
+Budget for three one-time setup steps that all fail *silently* if skipped: installing the
+CA certificate, granting the full-screen-intent permission, and exempting the app from
+battery optimisation. Onboarding has to detect and explain each.
 
 **Phase 4 — WebRTC.** Implement the ADR-001 architecture. Target: camera and microphone
 from device to tablet, tablet microphone to device speaker. Measure connection setup

@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | todo |
+| **Status** | done |
 | **Phase** | 0 |
 | **Depends on** | WP-08 |
 | **Blocks** | Phase 1 firmware HTTP client, Phase 2 backend, Phase 3 client |
@@ -73,6 +73,41 @@ and not fixed:
 - Authentication is specified for both the device and the client.
 - Every interaction in the WP-08 sequence diagrams has a corresponding endpoint.
 - The API is versioned and the versioning strategy is stated.
+
+## Outcome
+
+- [`../../api/openapi.yaml`](../../api/openapi.yaml) - OpenAPI 3.1, validated with
+  `openapi-spec-validator`. 14 paths, 15 schemas, all 22 refs resolve, no unused
+  components, operation ids unique.
+- [`../../api/websocket.md`](../../api/websocket.md) - the tablet WebSocket protocol,
+  which OpenAPI cannot express.
+
+Deliverable 9 of the project brief.
+
+### Decisions worth noting
+
+**Device writes are idempotent on a device-generated ULID.** The device retries from a
+local queue after a failed upload, so without this a backend outage would turn into
+duplicate rings in the house. Re-posting a known id returns 200 with the stored record
+rather than 201.
+
+**Device signaling is SSE down, POST up** - the same shape as Espressif's
+`doorbell_local`, which is the template for our `esp_peer_signaling` implementation. It
+exists because the device cannot accept an inbound connection.
+
+**Session claiming is REST, not WebSocket.** First accept wins, and losing the race
+returns 409. An asynchronous message that may or may not arrive is a worse answer for a
+state-changing operation.
+
+**Snapshot bytes are a separate endpoint from snapshot metadata**, so listing a history
+page does not transfer images and the image can be cached independently.
+
+**Cursor paging, not offset.** The event list is append-only, so offsets shift as new
+events arrive.
+
+**Nothing is replayed on WebSocket reconnect.** A replayed ring would put a live-call UI
+on screen for a device that has already powered off, inviting the user to answer a call
+that cannot connect. Missed rings appear in the history instead.
 
 ## Open questions
 

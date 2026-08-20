@@ -143,7 +143,7 @@ Calculated in [`power-budget.md`](power-budget.md):
 
 | | Board deep sleep | External power gating |
 | --- | --- | --- |
-| Daily consumption | ~1220 mAh/day | ~57 mAh/day |
+| Daily consumption | ~1220 mAh/day | ~58 mAh/day |
 | Required panel | ~12 W | ~2 W |
 | Battery for 10 days | ~21 Ah | ~3 Ah |
 
@@ -198,14 +198,33 @@ buses. **[A]** — a common and reasonable choice, not yet validated against `av
 
 Speaker: 8 ohm, 2-3 W, in a small sealed enclosure. **[A]**
 
-### Motion sensor — AM312 PIR
+### Motion sensor — HC-SR501 PIR, with adjustable hold time
 
-Chosen for quiescent current above all: roughly 12 µA, against ~50 µA for the more common
-HC-SR501. **[A]** It stays powered permanently on the ungated side of the load switch, so
-its idle draw is one of only three things running between events.
+**Revised.** The earlier choice was the AM312, picked for its ~12 µA quiescent against the
+HC-SR501's ~50 µA. That reasoning was right about current and wrong about what matters.
 
-It works from 2.7 V, gives a clean digital output, and its fixed ~2 s hold time is not a
-drawback because the cooldown is enforced in firmware anyway.
+The device is unpowered between activations, so it **cannot implement the motion
+cooldown** — no timer runs while it is off. If the PIR asserts again the instant the latch
+releases, the device boots again, and sustained motion becomes sustained booting. That is
+the failure the cooldown requirement exists to prevent, and it has to be solved in
+hardware.
+
+The mechanism: the latch is **edge-triggered** on the PIR's rising edge, and the PIR's own
+**hold time is the cooldown**. While the sensor holds its output high there is no new
+rising edge, so no new activation is possible. The HC-SR501's hold time is adjustable from
+a few seconds to several minutes; the AM312's is fixed at roughly two seconds, which is far
+too short to serve as a cooldown.
+
+The arithmetic on the trade: the extra ~38 µA costs about **1.4 mAh/day**, against a budget
+of ~58 mAh/day. One avoided spurious activation costs 0.58 mAh, so the extra quiescent pays
+for itself after about two prevented boots per day — and on a windy day with a moving
+shrub in frame, it prevents far more than that. **[A]**
+
+Set the sensor to repeatable ("H") mode so the output stays high while motion continues and
+for the hold time after it stops.
+
+Still open: supply voltage of the specific module (variants differ, 4.5-20 V is typical),
+output logic level against the latch input, and lens coverage for the doorway. **[O]**
 
 ### Doorbell button
 
@@ -213,18 +232,24 @@ Momentary switch with an RC network for hardware debounce, in addition to firmwa
 debouncing. It must **set the power latch directly**, not merely signal a GPIO — a
 powered-down board has no GPIO left to interrupt. **[A]**
 
-### Power latch
+### Power latch — edge-triggered
 
 A latching load switch between the power module output and VIN, with two set inputs — the
-PIR and the button — and a firmware-driven clear. An off-the-shelf pushbutton power-switch
-module with ON and OFF inputs implements this; a discrete P-MOSFET and N-MOSFET latch is
-the alternative. **[A]**
+PIR and the button — and a firmware-driven clear.
+
+**It must trigger on the rising edge, not on level.** A level-triggered latch would
+re-power the device immediately after the firmware releases it, because the PIR output is
+still high at that moment. Edge triggering is what makes the PIR's hold time function as
+the cooldown.
+
+An off-the-shelf pushbutton power-switch module with ON and OFF inputs implements this; a
+discrete P-MOSFET and N-MOSFET latch is the alternative. **[A]**
 
 This is the component the entire energy design rests on. See section 3.
 
 ### Battery — 3000 mAh minimum, 5000 mAh preferred
 
-Calculated in [`power-budget.md`](power-budget.md) section 5 from ~57 mAh/day, ten days of
+Calculated in [`power-budget.md`](power-budget.md) section 5 from ~58 mAh/day, ten days of
 autonomy, 80 % usable depth of discharge and cold derating. The calculated minimum is
 ~1000 mAh; the recommendation carries deliberate margin because the event estimates are
 unmeasured. **[A]**

@@ -1,0 +1,70 @@
+# Doorbell deployment.
+#
+#   docker compose up -d                  production: backend only
+#   docker compose --profile dev up -d    development: adds a local Mosquitto
+#
+# The broker is normally an existing service on the network (ADR-002); the container
+# below exists only so development does not require one.
+#
+# Note there is no media port range and no TURN server. WebRTC runs directly between the
+# door device and the tablet (ADR-001), so no media passes through this stack.
+
+name: doorbell
+
+services:
+
+  backend:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    image: doorbell-backend:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # HTTPS only. Serves the API and the web UI on one origin (ADR-004).
+      - "${HTTP_PORT:-8443}:8443"
+    volumes:
+      - data:/data
+      - certs:/certs
+    healthcheck:
+      # The certificate is issued for PUBLIC_HOSTNAME, not for localhost, so the check
+      # cannot validate it. TLS verification is disabled for this one command only.
+      test:
+        - CMD
+        - node
+        - -e
+        - >
+          process.env.NODE_TLS_REJECT_UNAUTHORIZED='0';
+          fetch('https://127.0.0.1:8443/api/v1/health')
+            .then(r => process.exit(r.ok ? 0 : 1))
+            .catch(() => process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # Development only. Production uses the existing broker on the network.
+  mosquitto:
+    profiles: [dev]
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+
+volumes:
+  # Named volumes, so events and snapshots survive `docker compose down`.
+  # This is MVP acceptance criterion 13 and it is tested, not assumed.
+  data:
+  certs:
+  mosquitto-data:

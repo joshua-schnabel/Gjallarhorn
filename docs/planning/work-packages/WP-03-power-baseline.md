@@ -25,7 +25,7 @@ The question that blocked WP-04 is answered.
 - Board deep sleep at 31.5 mA costs ~1220 mAh/day, needing a ~12 W panel and a ~21 Ah
   cell. Not a doorbell.
 - With an external latching load switch, the board is fully unpowered between events:
-  ~57 mAh/day, a 2 W panel and a 3000-5000 mAh cell. **A factor of about 21.**
+  ~58 mAh/day, a 2 W panel and a 3000-5000 mAh cell. **A factor of about 21.**
 - **The load switch is therefore a requirement of the design, not an optimisation.**
 - The operating model is settled: deep power-off, woken only by button or motion, live
   sessions only inside the wake window after an event. Accepted by the maintainer.

@@ -44,8 +44,18 @@ section 26.
 
 ## Client
 
-- Device: **Google Pixel Tablet, Android 14**, on a stand.
+- Device: **Google Pixel Tablet, Android 14**, on a stand, permanently on mains power.
+- **The display is not permanently on.**
+- **On a ring the app must come to the front, the way an incoming call does** — screen on,
+  app raised, without the user touching anything.
+- **No FCM / Google push.** A persistent connection from the tablet is acceptable, since
+  it is permanently powered.
 - A certificate can be installed on the tablet.
+
+This combination is what forces a native Android client; see
+[`../adr/ADR-003-client-platform.md`](../adr/ADR-003-client-platform.md). No web
+technology can raise itself to the foreground or hold a connection while the screen is
+off, and the only web route to waking a closed app is push through FCM.
 
 ## Server
 
@@ -56,15 +66,38 @@ section 26.
 
 ## TLS
 
-- A CA exists in the home network, but **the default must be a self-contained system**:
-  self-signed certificates, so a new user can start quickly.
-- Using the existing CA is step two, not the default.
+**Revised 2026-08-19**, superseding the earlier self-signed default. The maintainer
+requires a service worker, and a service worker requires a genuinely trusted certificate —
+Chrome refuses to register one on an origin with a certificate error. Self-signed is
+therefore no longer sufficient, and **a trusted certificate is a base requirement of the
+system rather than an optional improvement.**
 
-**Known risk:** the client needs a secure context for microphone access. Whether a
-self-signed certificate is enough for `getUserMedia` and for a service worker on Android
-Chrome after the user accepts the warning is **not established** and must be tested in
-WP-06. If it is not enough, the self-signed default conflicts with two-way audio, and
-that conflict has to be resolved rather than discovered late.
+Two supported paths:
+
+1. **Own CA (default).** The deployment generates a local CA and a server certificate
+   signed by it, and publishes the CA certificate for download. The user installs it once
+   on the tablet. Chrome on Android trusts user-installed CAs, so this yields a fully
+   trusted origin with no external dependency — the system stays self-contained.
+2. **Let's Encrypt**, where the server is publicly reachable or a DNS-01 challenge with a
+   real domain is available.
+
+The maintainer's existing home CA can be used instead by supplying certificate and key;
+that is configuration, not a separate code path.
+
+**DNS is a prerequisite.** The maintainer runs DNS on the network, and the project may
+assume a resolvable hostname for the backend rather than working around bare IP
+addresses — certificates for IPs are awkward, and Let's Encrypt will not issue them at
+all.
+
+**The hostname itself is configurable**, per the configuration rule above: other
+installations will use different names. There is no sensible default, so the value is
+**required at startup** and the backend must **fail loudly if it is unset** rather than
+generating a certificate for a name the tablet will reject. A certificate quietly issued
+for the wrong name is a failure that only shows up on the tablet, far from its cause.
+
+**Note for a possible native client:** Android apps have not trusted user-installed CAs by
+default since Android 7. Chrome does, so this affects nothing today, but a native client
+would have to opt in explicitly.
 
 ## Live sessions
 
