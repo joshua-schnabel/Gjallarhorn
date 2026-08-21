@@ -86,6 +86,30 @@ survives every plausible combination of them being wrong. See
 
 ---
 
+## Phase 2 — backend
+
+Started 2026-08-21, ahead of Phase 1. The reason is recorded in
+[`constraints.md`](constraints.md): there is no firmware toolchain on this machine, while
+the backend is fully buildable and testable — and Phase 1's own acceptance target,
+`motion -> wake -> snapshot -> upload`, has nothing to upload to until the backend exists.
+
+| WP | Title | Status | Depends on | Main deliverable |
+| --- | --- | --- | --- | --- |
+| [WP-11](work-packages/WP-11-backend-skeleton.md) | Backend skeleton | done | WP-07 | `server/` runs, health check, TLS |
+| WP-12 | Persistence: schema, migrations, repositories | **next** | WP-11 | SQLite layer |
+| WP-13 | Device intake: events, snapshots, telemetry | todo | WP-12 | `POST` endpoints per OpenAPI |
+| WP-14 | Query endpoints and pagination | todo | WP-12 | `GET` endpoints per OpenAPI |
+| WP-15 | MQTT publisher and device state | todo | WP-13 | ADR-002 and `mqtt.md` implemented |
+| WP-16 | WebSocket, signaling relay, live sessions | todo | WP-13 | `websocket.md` implemented |
+| WP-17 | Container, multi-arch, compose, end-to-end tests | todo | WP-11..16 | `docker compose up` works |
+
+**Order rationale.** The skeleton first, because config validation and TLS decide whether
+anything can start at all. Then persistence, because every endpoint needs it. Intake
+before queries, because queries need data to return. MQTT and WebSocket after intake,
+since both are triggered by events arriving.
+
+---
+
 ## Coverage of the project brief
 
 The brief lists twelve deliverables for the first result (its section 35). Each maps to
