@@ -79,13 +79,27 @@ jobs:
           # Three places name the Node major. They drift silently otherwise: the
           # image would run a version the tests never used.
           engines="$(node -p "require('./server/package.json').engines.node")"
-          dockerfile="$(grep -oP '^FROM node:\K[0-9]+' server/Dockerfile)"
-          echo "workflow=${NODE_VERSION}  engines=${engines}  Dockerfile=${dockerfile}"
+
+          # The Dockerfile is multi-stage, so there is a FROM per stage. Collect the
+          # distinct majors: more than one means the builder and the runtime disagree,
+          # which is its own bug — dependencies resolved against one Node major and
+          # executed on another.
+          mapfile -t majors < <(grep -oP '^FROM node:\K[0-9]+' server/Dockerfile | sort -u)
+          echo "workflow=${NODE_VERSION}  engines=${engines}  Dockerfile=${majors[*]}"
+
+          if [ "${#majors[@]}" -eq 0 ]; then
+            echo "::error::no 'FROM node:<major>' line found in server/Dockerfile"
+            exit 1
+          fi
+          if [ "${#majors[@]}" -gt 1 ]; then
+            echo "::error::server/Dockerfile stages disagree on the Node major: ${majors[*]}"
+            exit 1
+          fi
           case "$engines" in *"${NODE_VERSION}"*) ;; *)
             echo "::error::server/package.json engines.node ($engines) does not mention Node ${NODE_VERSION}"; exit 1 ;;
           esac
-          if [ "$dockerfile" != "${NODE_VERSION}" ]; then
-            echo "::error::server/Dockerfile pins node:${dockerfile} but the workflow uses ${NODE_VERSION}"
+          if [ "${majors[0]}" != "${NODE_VERSION}" ]; then
+            echo "::error::server/Dockerfile pins node:${majors[0]} but the workflow uses ${NODE_VERSION}"
             exit 1
           fi
 
