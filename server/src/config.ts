@@ -62,7 +62,8 @@ export class ConfigError extends Error {
 }
 
 /** Hostnames only: no scheme, no port, no path. That is what a certificate is issued for. */
-const HOSTNAME_PATTERN = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
+const HOSTNAME_PATTERN =
+    /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
 
 type Env = Record<string, string | undefined>;
 

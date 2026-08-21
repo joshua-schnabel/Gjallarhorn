@@ -1,0 +1,379 @@
+name: CI
+
+# Modelled on the pipeline in joshua-schnabel/muninn.io, adapted to a
+# TypeScript/Node service. Same conventions throughout: actions pinned by SHA,
+# `persist-credentials: false` on every checkout, minimal default permissions,
+# and the image built ONCE per architecture into a tarball that every later job
+# consumes — so the bytes that are scanned are the bytes that are tested.
+#
+# Deliberately NOT copied across yet: the release stages (`push`, `publish`) and
+# release.yml. This project has no release process, no CHANGELOG, no versioning
+# decision and no registry credentials configured. A publish job here would sit
+# red on every run and gate nothing. docs/ci-cd.md records what would be needed
+# to turn it on.
+on:
+  push:
+    branches: ["main", "dev"]
+  # Every PR, whatever its target — so every change is gated before merge.
+  pull_request:
+
+# Cancel superseded PR runs. Never cancel a push run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Minimal by default; the one job that needs more escalates locally.
+permissions:
+  contents: read
+
+env:
+  # The Node major the service targets. It appears in package.json `engines`,
+  # in server/Dockerfile and here; the check job asserts the three agree, so a
+  # bump cannot land in one place only.
+  NODE_VERSION: "24"
+
+# ── Pipeline shape ──────────────────────────────────────────────────────────
+#
+#   check ─┬ test ── coverage (>= 80% lines)
+#          └ supply-chain
+#                     ▼
+#         build (per arch, native runner) → image.tar artifact
+#              ├ scan        (Trivy on the artifact, + SBOM)
+#              └ integration (the artifact, loaded and actually run)
+#
+# One job, one responsibility. `integration` runs on a native runner per
+# architecture because a loaded container has to execute on matching hardware.
+# `scan` does not: Trivy reads the tarball's layers, so the host architecture is
+# irrelevant and ubuntu-latest is enough for both.
+
+jobs:
+  # ── Gate 1: Format & Typecheck ─────────────────────────────────────────────
+  check:
+    name: Format & Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # `persist-credentials: false` on every checkout in this repository. The
+      # default writes the job's token into `.git/config`, where anything
+      # running afterwards can read it — and what runs afterwards here is `npm`,
+      # which executes install scripts from the dependency tree. A token that is
+      # not on disk is one a compromised package cannot take.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      # `npm ci` and not `npm install`: it fails when package.json and the lock
+      # file disagree, which is the check, not a side effect of one.
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci --no-audit --no-fund
+
+      - name: Node version is consistent across the repository
+        run: |
+          # Three places name the Node major. They drift silently otherwise: the
+          # image would run a version the tests never used.
+          engines="$(node -p "require('./server/package.json').engines.node")"
+          dockerfile="$(grep -oP '^FROM node:\K[0-9]+' server/Dockerfile)"
+          echo "workflow=${NODE_VERSION}  engines=${engines}  Dockerfile=${dockerfile}"
+          case "$engines" in *"${NODE_VERSION}"*) ;; *)
+            echo "::error::server/package.json engines.node ($engines) does not mention Node ${NODE_VERSION}"; exit 1 ;;
+          esac
+          if [ "$dockerfile" != "${NODE_VERSION}" ]; then
+            echo "::error::server/Dockerfile pins node:${dockerfile} but the workflow uses ${NODE_VERSION}"
+            exit 1
+          fi
+
+      - name: Prettier
+        working-directory: server
+        run: npm run format:check
+
+      # The strict compiler settings do much of what a linter would: `strict`,
+      # `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
+      # `noImplicitReturns`. `erasableSyntaxOnly` additionally rejects syntax
+      # Node cannot strip, which is a build error here rather than a container
+      # that fails to start.
+      - name: Typecheck
+        working-directory: server
+        run: npm run typecheck
+
+  # ── Gate 2: Tests ──────────────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: check
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci --no-audit --no-fund
+
+      - name: Run tests
+        working-directory: server
+        run: npm test
+
+  # ── Gate 3: Coverage ───────────────────────────────────────────────────────
+  coverage:
+    name: Coverage (>= 80% lines)
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci --no-audit --no-fund
+
+      # Node's own coverage, so no extra dependency. The thresholds are the
+      # gate: `--test-coverage-lines` makes the run fail below them rather than
+      # printing a number nobody reads.
+      - name: Coverage
+        working-directory: server
+        run: npm run coverage
+
+  # ── Gate 4: Supply chain ───────────────────────────────────────────────────
+  supply-chain:
+    name: Supply-Chain Security
+    runs-on: ubuntu-latest
+    needs: check
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci --no-audit --no-fund
+
+      # Blocking on high and critical only. A gate that fails on every low
+      # advisory in a transitive dev dependency is a gate that gets switched
+      # off — the same reasoning as the Trivy split below.
+      - name: npm audit (high and critical block)
+        working-directory: server
+        run: npm audit --audit-level=high
+
+      # Runtime dependencies are what ships in the image, so they get a stricter
+      # look than the dev tree.
+      - name: npm audit, production tree (informational)
+        working-directory: server
+        run: npm audit --omit=dev || true
+
+  # ── Build ONCE per arch → image.tar artifact ───────────────────────────────
+  # Native runner per architecture, no QEMU. The tarball is the single source of
+  # truth for scan and integration: whatever is tested is exactly what was built.
+  build:
+    name: Build image ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    needs: [check, test, coverage, supply-chain]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Sanitise platform name
+        env:
+          platform: ${{ matrix.platform }}
+        run: echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
+      - name: Docker metadata (labels only)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: gjallarhorn-backend
+          labels: |
+            org.opencontainers.image.title=Gjallarhorn backend
+            org.opencontainers.image.description=Backend for a solar-powered video doorbell
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # ADR-004 chose a native SQLite driver, so the arm64 leg of this build is
+      # not a formality: it is the check that a prebuilt binary resolves without
+      # a compiler in the image. That was verified by hand once (see WP-10); this
+      # keeps it verified.
+      - name: Build image to a local tarball
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./server
+          platforms: ${{ matrix.platform }}
+          tags: gjallarhorn-backend:ci
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=docker,dest=${{ runner.temp }}/image.tar
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
+
+      - name: Upload image tarball
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── Scan the built artifact (never rebuilds it) ───────────────────────────
+  scan:
+    name: Trivy scan ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write # SARIF upload, and nothing else in this workflow
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Sanitise platform name
+        env:
+          platform: ${{ matrix.platform }}
+        run: echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
+      - name: Download image tarball
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}
+
+      - name: Trivy - full scan (SARIF)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          input: ${{ runner.temp }}/image.tar
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          ignore-unfixed: false
+          exit-code: "0"
+
+      - name: Upload SARIF to GitHub Security tab
+        # Fork PRs have a read-only token and cannot upload SARIF; the blocking
+        # pass below still gates them. Per-arch category so the legs do not
+        # overwrite each other.
+        if: always() && github.event.pull_request.head.repo.fork != true
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-${{ env.PLATFORM_PAIR }}
+
+      # Blocking on FIXABLE critical and high only. The base image is
+      # debian-slim (ADR-004), which carries unfixable findings that no action
+      # here can clear — and a gate that blocks on those is a gate that gets
+      # switched off. The full scan above still reports them to the Security tab.
+      - name: Trivy - blocking scan (fixable CRITICAL/HIGH only)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          input: ${{ runner.temp }}/image.tar
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # From the same tarball, for the reason the whole pipeline is shaped this
+      # way: an SBOM describing different bytes than the ones that shipped is
+      # worse than none, because it will be believed.
+      - name: Generate SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          input: ${{ runner.temp }}/image.tar
+          format: cyclonedx
+          output: sbom-${{ env.PLATFORM_PAIR }}.cdx.json
+          exit-code: "0"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom-${{ env.PLATFORM_PAIR }}
+          path: sbom-${{ env.PLATFORM_PAIR }}.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+  # ── Integration-test the built artifact (loaded, never rebuilt) ───────────
+  # Native runner per arch: a loaded container must run on matching hardware.
+  integration:
+    name: Integration test ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    needs: build
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Sanitise platform name
+        env:
+          platform: ${{ matrix.platform }}
+        run: echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
+      - name: Download image tarball
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}
+
+      # Exercises what only appears once the service is packaged: refusal to
+      # start when misconfigured, certificate generation, certificate reuse
+      # across a restart, a TLS chain a client can verify — and that the
+      # verification is not vacuous, by requiring a wrong hostname and an
+      # unrelated CA to be rejected.
+      - name: Integration test
+        run: scripts/integration-test.sh "${{ runner.temp }}/image.tar"
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs doorbell-integration 2>&1 | tail -50 || true
