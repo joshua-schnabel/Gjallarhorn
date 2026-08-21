@@ -126,6 +126,37 @@ off. The full scan still reports everything to the Security tab.
 
 ---
 
+## The gates, and what enforces them
+
+The workflows above only *report*. What makes them binding is a branch ruleset requiring
+three status checks, and those three are **aggregate jobs** rather than the individual
+ones:
+
+| Required check | Aggregates |
+| --- | --- |
+| `Source gate` | Format & Typecheck, Tests, Coverage, Supply-Chain |
+| `Image gate` | Build, Trivy scan, Integration — both architectures |
+| `Security gate` | ShellCheck, Actionlint, Semgrep |
+
+**Why aggregates and not the job names.** A matrix job's check name contains the matrix
+value, so requiring `Image · Build linux/amd64` would break the moment a platform is
+renamed — and, worse, **adding a platform would silently leave the new leg un-gated**. An
+aggregate job `needs:` the whole stage, so a new matrix entry is covered automatically.
+
+Each gate runs with `if: always()`, so it still runs — and still fails — when a dependency
+failed rather than being skipped along with it. It writes a table of member results to the
+run summary before deciding, because that is the view somebody actually reads when
+something is red.
+
+> **Do not rename `Source gate`, `Image gate` or `Security gate`.** They are the names the
+> ruleset requires. A renamed required check never reports again, and a check that never
+> reports blocks every pull request — silently, because the PR simply sits there.
+
+The `Source ·` / `Image ·` / `Security ·` prefixes on the individual jobs are grouping for
+the checks list. They are deliberately *not* applied to the three gate jobs.
+
+---
+
 ## Branch model
 
 ```text

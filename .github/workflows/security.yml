@@ -27,7 +27,7 @@ jobs:
   # actionlint already shellchecks the `run:` blocks inside the workflows; this
   # covers the scripts those blocks call.
   shellcheck:
-    name: ShellCheck
+    name: Security · ShellCheck
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -43,7 +43,7 @@ jobs:
   # dependency, a shell error inside a `run:` block — and expression syntax in
   # places it is easy to forget is parsed, including comments.
   actionlint:
-    name: Actionlint
+    name: Security · Actionlint
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -62,7 +62,7 @@ jobs:
 
   # ── Semgrep SAST ───────────────────────────────────────────────────────────
   semgrep:
-    name: Semgrep SAST
+    name: Security · Semgrep SAST
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -134,3 +134,37 @@ jobs:
             --error \
             --exclude node_modules \
             .
+
+  # ── Aggregate gate ─────────────────────────────────────────────────────────
+  # See the note in ci.yml. `Security gate` is the name the branch ruleset
+  # requires; renaming it would block every pull request.
+  security-gate:
+    name: Security gate
+    runs-on: ubuntu-latest
+    needs: [shellcheck, actionlint, semgrep]
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Every security check succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          STAGE: Security
+        run: |
+          # The table is written before the verdict, so a failing stage still
+          # reports which member failed on the run's summary page - that is the
+          # case somebody actually reads it in. `tee -a` puts the same lines in
+          # the job log, where the run's own output belongs.
+          {
+            echo "## $STAGE stage"
+            echo
+            echo "| job | result |"
+            echo "|---|---|"
+            printf '%s' "$RESULTS" | jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          bad="$(printf '%s' "$RESULTS" \
+            | jq -r 'to_entries[] | select(.value.result != "success") | "\(.key)=\(.value.result)"')"
+          if [ -n "$bad" ]; then
+            echo "::error::security gate failed: $(echo "$bad" | tr '\n' ' ')"
+            exit 1
+          fi

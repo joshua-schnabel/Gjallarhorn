@@ -49,7 +49,7 @@ env:
 jobs:
   # ── Gate 1: Format & Typecheck ─────────────────────────────────────────────
   check:
-    name: Format & Typecheck
+    name: Source · Format & Typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -118,7 +118,7 @@ jobs:
 
   # ── Gate 2: Tests ──────────────────────────────────────────────────────────
   test:
-    name: Tests
+    name: Source · Tests
     runs-on: ubuntu-latest
     needs: check
     timeout-minutes: 15
@@ -143,7 +143,7 @@ jobs:
 
   # ── Gate 3: Coverage ───────────────────────────────────────────────────────
   coverage:
-    name: Coverage (>= 80% lines)
+    name: Source · Coverage (>= 80% lines)
     runs-on: ubuntu-latest
     needs: test
     timeout-minutes: 15
@@ -171,7 +171,7 @@ jobs:
 
   # ── Gate 4: Supply chain ───────────────────────────────────────────────────
   supply-chain:
-    name: Supply-Chain Security
+    name: Source · Supply-Chain Security
     runs-on: ubuntu-latest
     needs: check
     timeout-minutes: 10
@@ -207,7 +207,7 @@ jobs:
   # Native runner per architecture, no QEMU. The tarball is the single source of
   # truth for scan and integration: whatever is tested is exactly what was built.
   build:
-    name: Build image ${{ matrix.platform }}
+    name: Image · Build ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     needs: [check, test, coverage, supply-chain]
     timeout-minutes: 30
@@ -266,7 +266,7 @@ jobs:
 
   # ── Scan the built artifact (never rebuilds it) ───────────────────────────
   scan:
-    name: Trivy scan ${{ matrix.platform }}
+    name: Image · Trivy scan ${{ matrix.platform }}
     runs-on: ubuntu-latest
     needs: build
     timeout-minutes: 20
@@ -348,7 +348,7 @@ jobs:
   # ── Integration-test the built artifact (loaded, never rebuilt) ───────────
   # Native runner per arch: a loaded container must run on matching hardware.
   integration:
-    name: Integration test ${{ matrix.platform }}
+    name: Image · Integration test ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     needs: build
     timeout-minutes: 20
@@ -391,3 +391,80 @@ jobs:
       - name: Container logs on failure
         if: failure()
         run: docker logs doorbell-integration 2>&1 | tail -50 || true
+
+  # ── Aggregate gates ────────────────────────────────────────────────────────
+  #
+  # These two jobs, and `security-gate` in security.yml, exist so the branch
+  # ruleset has a stable name to require. A matrix job's check name contains the
+  # matrix value, so requiring `Image · Build linux/amd64` directly would break the
+  # moment a platform is added or renamed - and worse, adding a platform would
+  # silently leave the new leg un-gated.
+  #
+  # `if: always()` so the gate still runs, and still fails, when a dependency
+  # failed rather than being skipped along with it.
+  #
+  # NOTE: `Source gate` and `Image gate` are the names the branch ruleset
+  # requires. A renamed required check never reports again, and a check that
+  # never reports blocks every pull request. Do not harmonise them with the
+  # `Source ·` / `Image ·` prefixes on the jobs above.
+  source-gate:
+    name: Source gate
+    runs-on: ubuntu-latest
+    needs: [check, test, coverage, supply-chain]
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Every source check succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          STAGE: Source
+        run: |
+          # The table is written before the verdict, so a failing stage still
+          # reports which member failed on the run's summary page - that is the
+          # case somebody actually reads it in. `tee -a` puts the same lines in
+          # the job log, where the run's own output belongs.
+          {
+            echo "## $STAGE stage"
+            echo
+            echo "| job | result |"
+            echo "|---|---|"
+            printf '%s' "$RESULTS" | jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          bad="$(printf '%s' "$RESULTS" \
+            | jq -r 'to_entries[] | select(.value.result != "success") | "\(.key)=\(.value.result)"')"
+          if [ -n "$bad" ]; then
+            echo "::error::source gate failed: $(echo "$bad" | tr '\n' ' ')"
+            exit 1
+          fi
+
+  image-gate:
+    name: Image gate
+    runs-on: ubuntu-latest
+    needs: [build, scan, integration]
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Every image check succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          STAGE: Image
+        run: |
+          # The table is written before the verdict, so a failing stage still
+          # reports which member failed on the run's summary page - that is the
+          # case somebody actually reads it in. `tee -a` puts the same lines in
+          # the job log, where the run's own output belongs.
+          {
+            echo "## $STAGE stage"
+            echo
+            echo "| job | result |"
+            echo "|---|---|"
+            printf '%s' "$RESULTS" | jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          bad="$(printf '%s' "$RESULTS" \
+            | jq -r 'to_entries[] | select(.value.result != "success") | "\(.key)=\(.value.result)"')"
+          if [ -n "$bad" ]; then
+            echo "::error::image gate failed: $(echo "$bad" | tr '\n' ' ')"
+            exit 1
+          fi
