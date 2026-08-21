@@ -75,6 +75,36 @@ $ scripts/integration-test.sh path/to/image.tar  # tests a prebuilt artifact
 
 ---
 
+## What the first run found
+
+The pipeline was red on its first execution, and all three failures were real. Recorded
+because they are the kind of thing that gets re-discovered otherwise.
+
+**Trivy: 7 fixable findings, 6 HIGH and 1 CRITICAL — all inside npm's own dependency
+tree.** `tar`, `undici`, `brace-expansion`, `ip-address`, shipped as part of the Node base
+image. The Debian packages themselves were clean.
+
+The fix was not a suppression. Nothing at runtime uses npm — the entrypoint is `node` and
+so is the health check — so the Dockerfile became two stages and npm no longer travels to
+the runtime image. Findings went to zero, the image got smaller, and the attack surface
+shrank. **A finding that can be removed rather than accepted is worth the ten minutes.**
+
+**Semgrep: `rejectUnauthorized: false` in `scripts/verify-tls.mjs`.** A true match, and
+intentional: nothing can verify a chain before the CA that anchors it has been fetched,
+which is exactly the bootstrap a tablet performs. Suppressed with a targeted
+`// nosemgrep: <rule-id>` and the reasoning inline — and it is safe to assert on precisely
+because the next two checks require strict verification to succeed and to *fail* for a
+wrong hostname and an unrelated CA.
+
+This is what the SARIF-suppression step in `security.yml` exists for: the finding stays
+suppressed in the blocking pass without lingering in the Security tab forever.
+
+**Integration: `Permission denied`.** `scripts/integration-test.sh` was committed `100644`
+— the executable bit does not survive a `chmod` on a Windows checkout. Fixed with
+`git update-index --chmod=+x`. Worth knowing for every script added from this machine.
+
+---
+
 ## Conventions
 
 **Actions are pinned by commit SHA**, with the version in a trailing comment. A tag is

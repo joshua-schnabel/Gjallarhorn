@@ -56,6 +56,15 @@ async function expectRejection(name, options) {
 console.log(`TLS verification against https://${servername} (${host}:${port})`);
 
 // 1. Unverified fetch of the CA — how a tablet bootstraps trust.
+//
+// `rejectUnauthorized: false` is the point of this line, not an oversight. Nothing can
+// verify the chain before the CA that anchors it has been fetched, and this is exactly
+// the bootstrap step a tablet performs during onboarding. What makes it safe to assert
+// on is what follows: step 2 requires strict verification to succeed, and step 3
+// requires it to FAIL for a wrong hostname and for an unrelated CA. A test that only
+// ever connected insecurely would prove nothing; this one proves the chain is real.
+//
+// nosemgrep: problem-based-packs.insecure-transport.js-node.bypass-tls-verification.bypass-tls-verification
 const caResponse = await get('/ca.crt', { rejectUnauthorized: false });
 check('CA certificate is served', caResponse.status === 200, `HTTP ${caResponse.status}`);
 
