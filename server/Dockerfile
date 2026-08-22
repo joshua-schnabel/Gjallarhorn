@@ -15,7 +15,7 @@
 # project makes DNS a prerequisite. See ADR-004.
 
 # ── Builder: resolve dependencies ─────────────────────────────────────────────
-FROM node:24-bookworm-slim AS deps
+FROM node:26-bookworm-slim AS deps
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 
 ENV NODE_ENV=production
 
