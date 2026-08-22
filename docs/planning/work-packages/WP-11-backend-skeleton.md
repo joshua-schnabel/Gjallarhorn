@@ -86,8 +86,8 @@ in WP-15.
 
 ## Open questions
 
-- Certificate lifetime for the generated CA and leaf. A certificate that silently expires
-  takes the doorbell UI with it, so renewal needs an answer before this runs unattended —
-  probably a long-lived CA and a leaf renewed on start when close to expiry.
+- ~~Certificate lifetime and renewal.~~ **Answered**: ACME is the intended path
+  (`../constraints.md`). The generated CA stays as the zero-configuration bootstrap; the
+  renewal mechanism becomes a work package of its own once the ACME flavour is chosen.
 - Does the health check need to report MQTT connectivity from the start, or only once
   WP-15 exists? Reporting a subsystem that is not built yet would be dishonest.

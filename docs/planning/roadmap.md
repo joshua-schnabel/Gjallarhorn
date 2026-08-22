@@ -96,8 +96,8 @@ the backend is fully buildable and testable — and Phase 1's own acceptance tar
 | WP | Title | Status | Depends on | Main deliverable |
 | --- | --- | --- | --- | --- |
 | [WP-11](work-packages/WP-11-backend-skeleton.md) | Backend skeleton | done | WP-07 | `server/` runs, health check, TLS |
-| WP-12 | Persistence: schema, migrations, repositories | **next** | WP-11 | SQLite layer |
-| WP-13 | Device intake: events, snapshots, telemetry | todo | WP-12 | `POST` endpoints per OpenAPI |
+| [WP-12](work-packages/WP-12-persistence.md) | Persistence: schema, migrations, repositories | done | WP-11 | SQLite layer |
+| WP-13 | Device intake: events, snapshots, telemetry | **next** | WP-12 | `POST` endpoints per OpenAPI |
 | WP-14 | Query endpoints and pagination | todo | WP-12 | `GET` endpoints per OpenAPI |
 | WP-15 | MQTT publisher and device state | todo | WP-13 | ADR-002 and `mqtt.md` implemented |
 | WP-16 | WebSocket, signaling relay, live sessions | todo | WP-13 | `websocket.md` implemented |

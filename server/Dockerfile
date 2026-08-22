@@ -24,7 +24,21 @@ COPY package.json package-lock.json ./
 
 # `npm ci` and not `npm install`: it fails when the manifest and the lock file disagree,
 # which is a check rather than a side effect.
-RUN npm ci --omit=dev --no-audit --no-fund
+#
+# `--ignore-scripts` for two reasons, and both matter.
+#
+# Correctness: better-sqlite3 ships prebuilt binaries for every platform this project
+# targets, including linux-x64, linux-arm64 and both musl variants. It also ships a
+# binding.gyp, and npm's default install behaviour for a package with one is to run
+# `node-gyp rebuild` regardless. That needs Python and a C toolchain, which this image
+# deliberately does not have — so the build failed while a perfectly good prebuilt binary
+# sat unused in the package. Verified: with scripts ignored, the prebuild loads and runs.
+#
+# Supply chain: an install script is arbitrary code from the dependency tree, executed at
+# image build time. Not running any is the stronger default, and the integration test is
+# the guard — the service opens the database on startup, so a native module that did not
+# load fails the pipeline rather than production.
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 FROM node:24-bookworm-slim
@@ -45,6 +59,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY src ./src
+# The schema travels with the code that applies it. Without this the service starts and
+# then fails on a missing migrations directory - which is how the integration test found
+# it, rather than a deployment doing so.
+COPY migrations ./migrations
 
 # Written to at runtime; owned by the unprivileged user so the service can create them.
 RUN mkdir -p /data /certs && chown -R node:node /data /certs /app

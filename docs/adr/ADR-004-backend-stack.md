@@ -204,6 +204,13 @@ producing an origin the browser actually trusts.
 Supplying certificate and key — from the maintainer's existing home CA, or from Let's
 Encrypt where the server is public — is configuration, not a separate code path.
 
+**Renewal is intended to move to ACME** (see `planning/constraints.md`). The generated
+local CA remains the bootstrap that makes a first start work with no configuration, but it
+is not the long-term renewal story: re-issuing the leaf on process start only helps a
+service that restarts. Which ACME flavour — a public domain with DNS-01, or an internal
+ACME server — is still open, and the two differ in whether the tablet needs a CA installed
+at all.
+
 The certificate is issued for a **configurable hostname**. DNS is a project
 prerequisite, so a resolvable name may be assumed; the name itself varies per
 installation and has no sensible default, so it is **required configuration** and the
