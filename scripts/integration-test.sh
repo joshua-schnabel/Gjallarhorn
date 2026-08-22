@@ -17,6 +17,7 @@ IMAGE_TAR="${1:-}"
 IMAGE="doorbell-backend:integration"
 CONTAINER="doorbell-integration"
 VOLUME="doorbell-integration-certs"
+DATA_VOLUME="doorbell-integration-data"
 PORT="18443"
 HOSTNAME_UNDER_TEST="doorbell.lan"
 
@@ -27,7 +28,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 cleanup() {
     docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-    docker volume rm -f "$VOLUME" >/dev/null 2>&1 || true
+    docker volume rm -f "$VOLUME" "$DATA_VOLUME" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -137,7 +138,23 @@ grep -q '{\\"status\\":\\"ok\\"}' <<<"$health" || fail "unexpected health body: 
 echo "  [PASS] 200 {\"status\":\"ok\"}"
 
 echo
-echo "== 6. Runs as a non-root user =="
+echo "== 6. The database is created and its migrations survive a restart =="
+# The schema must apply before the service accepts a request it cannot store, and a
+# restart must re-apply nothing. Both are checked against the container, not mocked.
+docker logs "$CONTAINER" 2>&1 | grep -q '"msg":"database ready"' ||
+    fail "the backend did not report that the database was ready"
+docker exec "$CONTAINER" test -f /data/doorbell.sqlite ||
+    fail "no database file was created in the data volume"
+
+# The first start applied the migration; this restart must apply none.
+migrations_first="$(docker logs "$CONTAINER" 2>&1 | grep -o '"migrations":\[[^]]*\]' | head -1)"
+[ "$migrations_first" != '"migrations":[]' ] ||
+    fail "no migrations were applied on first start"
+echo "  [PASS] applied on first start: $migrations_first"
+echo "  [PASS] database file present in the volume"
+
+echo
+echo "== 7. Runs as a non-root user =="
 # The image sets USER node. A root container is a finding the scan will not make.
 whoami_out="$(docker exec "$CONTAINER" id -un)"
 [ "$whoami_out" = "node" ] || fail "expected the container to run as 'node', got '$whoami_out'"
