@@ -1,0 +1,90 @@
+version: 2
+
+# Continuous dependency updates, consolidated. Each ecosystem gets ONE grouped
+# PR that Dependabot keeps maintained (rebased, deps added and removed as they
+# change) instead of a PR per dependency. Dependabot cannot group across
+# ecosystems, so this is one PR for npm + one for GitHub Actions + one for the
+# Dockerfile's base image.
+#
+# The group includes major bumps too, so the PR really is "everything in one".
+# Interaction with dependabot-auto-merge.yml: that workflow only auto-merges
+# patch/minor, so a group PR that happens to include a major waits for manual
+# review — you review exactly when a breaking bump is present.
+#
+# Security updates (advisory-driven) are intentionally NOT grouped — Dependabot
+# still opens those as their own PRs so an urgent CVE fix is not held back.
+#
+# `cooldown` makes a released version wait before Dependabot will propose it.
+# dependabot-auto-merge.yml merges patch/minor without human review, so a freshly
+# published malicious release would otherwise reach `dev` within the hour. The
+# wait buys the time in which such a release is typically yanked or gets an
+# advisory. It does NOT close that hole — an attacker can wait it out; only a
+# required review does. It applies to version updates only, so a CVE fix is never
+# delayed by it.
+#
+# `target-branch: dev` on every ecosystem, because Dependabot otherwise targets
+# the default branch — `main` — and that breaks the branching model in both
+# directions. A bump merged straight into `main` is a change `dev` never saw, so
+# the next `dev → main` release PR silently reverts it; and it reaches `main`
+# without the review path everything else goes through.
+#
+# `target-branch` covers VERSION updates only. Security updates ignore it and
+# always open against the default branch, and no setting changes that — which is
+# why dependabot-auto-merge.yml retargets them onto `dev` when it sees one.
+#
+# Dependabot uses `dependabot/*` branch names, which auto-pr.yml leaves alone
+# (see its branches-ignore).
+#
+# NOT covered here, deliberately:
+#   - The Semgrep and actionlint images in security.yml. Dependabot does not
+#     update `container:` or `docker run` references (dependabot-core#5819).
+#     Acceptable for Semgrep, whose rules are fetched at scan time; actionlint
+#     needs a manual bump.
+#   - The Mosquitto image in deploy/docker-compose.yml. It is development
+#     scaffolding under a profile, not something that ships, and a silent bump
+#     there would change what a local test means without anyone deciding to.
+updates:
+  # ── npm (the backend) ──────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /server
+    target-branch: dev
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    cooldown:
+      default-days: 3
+    groups:
+      npm:
+        patterns: ["*"]
+
+  # ── GitHub Actions pinned in .github/workflows ────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # ── The Dockerfile's base image ───────────────────────────────────────────
+  # `node:24-bookworm-slim`. This is where the image's CVE surface lives, and
+  # where the fix for an otherwise unfixable finding arrives as a Debian point
+  # release — this is what notices it.
+  - package-ecosystem: docker
+    directory: /server
+    target-branch: dev
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    cooldown:
+      default-days: 3
+    groups:
+      docker:
+        patterns: ["*"]

@@ -101,12 +101,17 @@ the backend is fully buildable and testable — and Phase 1's own acceptance tar
 | WP-14 | Query endpoints and pagination | todo | WP-12 | `GET` endpoints per OpenAPI |
 | WP-15 | MQTT publisher and device state | todo | WP-13 | ADR-002 and `mqtt.md` implemented |
 | WP-16 | WebSocket, signaling relay, live sessions | todo | WP-13 | `websocket.md` implemented |
-| WP-17 | Container, multi-arch, compose, end-to-end tests | todo | WP-11..16 | `docker compose up` works |
+| WP-17 | Compose integration and end-to-end tests | todo | WP-11..16 | `docker compose up` works |
 
 **Order rationale.** The skeleton first, because config validation and TLS decide whether
 anything can start at all. Then persistence, because every endpoint needs it. Intake
 before queries, because queries need data to return. MQTT and WebSocket after intake,
 since both are triggered by events arriving.
+
+**CI/CD landed alongside WP-11**, at the maintainer's request and modelled on the pipeline
+in muninn.io. It already covers the multi-architecture image build, the CVE scan and the
+packaged-container integration test, so WP-17 is narrowed to the compose stack and the
+end-to-end flow across services. See [`../ci-cd.md`](../ci-cd.md).
 
 ---
 

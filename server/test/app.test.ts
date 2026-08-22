@@ -61,7 +61,10 @@ describe('CA download', () => {
     test('serves the CA certificate unauthenticated when one was generated', async () => {
         // The tablet needs this before it can trust anything else here, so it cannot be
         // behind authentication. It is a public certificate.
-        const app = await buildApp({ config: testConfig(), caCert: '-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n' });
+        const app = await buildApp({
+            config: testConfig(),
+            caCert: '-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n',
+        });
         try {
             const response = await app.inject({ method: 'GET', url: '/ca.crt' });
 

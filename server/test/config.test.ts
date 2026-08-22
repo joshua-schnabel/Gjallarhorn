@@ -89,7 +89,10 @@ describe('loadConfig', () => {
     });
 
     test('snapshotDir follows dataDir unless set explicitly', () => {
-        assert.equal(loadConfig({ ...MINIMAL, DATA_DIR: '/var/doorbell' }).snapshotDir, '/var/doorbell/snapshots');
+        assert.equal(
+            loadConfig({ ...MINIMAL, DATA_DIR: '/var/doorbell' }).snapshotDir,
+            '/var/doorbell/snapshots',
+        );
         assert.equal(
             loadConfig({ ...MINIMAL, DATA_DIR: '/var/doorbell', SNAPSHOT_DIR: '/mnt/pics' }).snapshotDir,
             '/mnt/pics',

@@ -43,6 +43,7 @@ One item stays open by necessity: the hardware baseline waits on parts being sou
   still undecided.
 - **[`docs/power-budget.md`](docs/power-budget.md)** — why the design looks the way it
   does.
+- **[`docs/ci-cd.md`](docs/ci-cd.md)** — the pipeline: what gates what, and why.
 - **[`AGENTS.md`](AGENTS.md)** — how to work in this repository. Read before changing
   anything.
 

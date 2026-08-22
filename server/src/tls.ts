@@ -76,7 +76,11 @@ function createCa(hostname: string): { certPem: string; keyPem: string } {
     };
 }
 
-function createLeaf(hostname: string, caCertPem: string, caKeyPem: string): { certPem: string; keyPem: string } {
+function createLeaf(
+    hostname: string,
+    caCertPem: string,
+    caKeyPem: string,
+): { certPem: string; keyPem: string } {
     const caCert = forge.pki.certificateFromPem(caCertPem);
     const caKey = forge.pki.privateKeyFromPem(caKeyPem);
 
@@ -131,7 +135,8 @@ export function leafNeedsReissue(certPem: string | undefined, hostname: string):
     }
     if (cert.validity.notAfter.getTime() - Date.now() < LEAF_RENEW_BEFORE_DAYS * DAY_MS) return true;
 
-    const san = cert.getExtension('subjectAltName') as { altNames?: Array<{ type: number; value?: string }> } | undefined;
+    const san = cert.getExtension('subjectAltName') as
+        { altNames?: Array<{ type: number; value?: string }> } | undefined;
     const names = san?.altNames?.filter((n) => n.type === 2).map((n) => n.value) ?? [];
     return !names.includes(hostname);
 }
@@ -171,7 +176,11 @@ export async function ensureTls(config: Config): Promise<TlsMaterial> {
     const existingLeaf = await readIfPresent(leafCertFile);
     const existingLeafKey = await readIfPresent(leafKeyFile);
 
-    if (existingLeaf !== undefined && existingLeafKey !== undefined && !leafNeedsReissue(existingLeaf, config.publicHostname)) {
+    if (
+        existingLeaf !== undefined &&
+        existingLeafKey !== undefined &&
+        !leafNeedsReissue(existingLeaf, config.publicHostname)
+    ) {
         return { cert: existingLeaf, key: existingLeafKey, caCert: caCertPem, source: 'reused' };
     }
 
