@@ -242,7 +242,7 @@ jobs:
             org.opencontainers.image.description=Backend for a solar-powered video doorbell
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       # ADR-004 chose a native SQLite driver, so the arm64 leg of this build is
       # not a formality: it is the check that a prebuilt binary resolves without
@@ -311,7 +311,7 @@ jobs:
         # pass below still gates them. Per-arch category so the legs do not
         # overwrite each other.
         if: always() && github.event.pull_request.head.repo.fork != true
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           sarif_file: trivy-results.sarif
           category: trivy-${{ env.PLATFORM_PAIR }}
