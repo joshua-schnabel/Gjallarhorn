@@ -99,6 +99,33 @@ for the wrong name is a failure that only shows up on the tablet, far from its c
 default since Android 7. Chrome does, so this affects nothing today, but a native client
 would have to opt in explicitly.
 
+## Certificate renewal
+
+**ACME is the intended primary path**, decided 2026-08-22. The local CA that the backend
+generates stays as the zero-configuration bootstrap, but it is not the long-term answer:
+a certificate that silently expires takes the doorbell UI with it, and renewing only on
+process start works solely for a service that happens to restart.
+
+**Open, and it decides the implementation:** Let's Encrypt will not issue for an internal
+name such as `doorbell.fritz.box`. ACME therefore means one of two things, and they are
+different work:
+
+| Path | Needs | Consequence |
+| --- | --- | --- |
+| **Public domain, DNS-01** | A real domain and DNS provider credentials | Publicly trusted certificate. **No CA installation on the tablet at all** — the onboarding step disappears. |
+| **Internal ACME server** (step-ca or similar) | Another service to run | The tablet still installs the internal CA once, but renewal is automatic. |
+
+The first is markedly better for onboarding; the second keeps the system self-contained.
+Not blocking anything before the backend needs TLS renewal.
+
+## Cold charging
+
+Unresolved, and the only open hardware item that can damage something: Li-ion must not be
+charged below 0 degrees C, and the DFR0559 has no temperature cutoff.
+
+**The maintainer is sourcing a charge controller with temperature sensing** (2026-08-22).
+Until one is chosen, no outdoor deployment through a winter.
+
 ## Live sessions
 
 - **Signaling and notification go to multiple devices.**

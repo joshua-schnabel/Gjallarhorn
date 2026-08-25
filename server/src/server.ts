@@ -7,8 +7,10 @@
  */
 
 import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { buildApp } from './app.ts';
 import { ConfigError, loadConfig } from './config.ts';
+import { appliedMigrations, openDatabase } from './db/index.ts';
 import { ensureTls } from './tls.ts';
 
 async function main(): Promise<void> {
@@ -16,6 +18,11 @@ async function main(): Promise<void> {
 
     await mkdir(config.dataDir, { recursive: true });
     await mkdir(config.snapshotDir, { recursive: true });
+
+    // Opened before the listener: migrations must succeed before the service accepts a
+    // request it cannot store. A schema that fails to apply is a startup failure, not a
+    // surprise on the first doorbell press.
+    const db = openDatabase({ file: join(config.dataDir, 'doorbell.sqlite') });
 
     const tls = await ensureTls(config);
 
@@ -39,6 +46,8 @@ async function main(): Promise<void> {
         });
     });
 
+    app.log.info({ migrations: appliedMigrations(db).map((m) => m.name) }, 'database ready');
+
     app.log.info(
         {
             publicHostname: config.publicHostname,
@@ -60,7 +69,10 @@ async function main(): Promise<void> {
     const shutdown = (signal: string): void => {
         app.log.info({ signal }, 'shutting down');
         server.close(() => {
-            void app.close().then(() => process.exit(0));
+            void app.close().then(() => {
+                db.close();
+                process.exit(0);
+            });
         });
         // Do not wait forever for connections to drain.
         setTimeout(() => process.exit(1), 10_000).unref();

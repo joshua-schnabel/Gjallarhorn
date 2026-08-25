@@ -70,9 +70,12 @@ jobs:
 
       # `npm ci` and not `npm install`: it fails when package.json and the lock
       # file disagree, which is the check, not a side effect of one.
+      #
+      # `--ignore-scripts` matches the Dockerfile, so CI resolves the same binaries the
+      # image ships rather than compiling its own. See the note there.
       - name: Install dependencies
         working-directory: server
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Node version is consistent across the repository
         run: |
@@ -135,7 +138,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: server
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Run tests
         working-directory: server
@@ -160,7 +163,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: server
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       # Node's own coverage, so no extra dependency. The thresholds are the
       # gate: `--test-coverage-lines` makes the run fail below them rather than
@@ -188,7 +191,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: server
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       # Blocking on high and critical only. A gate that fails on every low
       # advisory in a transitive dev dependency is a gate that gets switched
