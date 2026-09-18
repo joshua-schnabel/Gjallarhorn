@@ -242,14 +242,14 @@ jobs:
             org.opencontainers.image.description=Backend for a solar-powered video doorbell
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
 
       # ADR-004 chose a native SQLite driver, so the arm64 leg of this build is
       # not a formality: it is the check that a prebuilt binary resolves without
       # a compiler in the image. That was verified by hand once (see WP-10); this
       # keeps it verified.
       - name: Build image to a local tarball
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./server
           platforms: ${{ matrix.platform }}
@@ -311,7 +311,7 @@ jobs:
         # pass below still gates them. Per-arch category so the legs do not
         # overwrite each other.
         if: always() && github.event.pull_request.head.repo.fork != true
-        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: trivy-results.sarif
           category: trivy-${{ env.PLATFORM_PAIR }}
